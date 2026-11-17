@@ -105,7 +105,7 @@
   <!-- LISTE -->
   <section id="viewList">
     <div class="fab-row">
-      <button class="primary" id="photoBtn">📷 Rezept fotografieren</button>
+      <button class="primary" id="photoBtn">🖼️ Foto / Screenshot</button>
       <button id="newBtn">✎ Manuell</button>
     </div>
     <input class="search" id="search" type="search" placeholder="Rezept oder Zutat suchen …">
@@ -409,7 +409,7 @@ function renderList() {
     .sort((a, b) => a.title.localeCompare(b.title, "de"));
   const list = $("list");
   if (!recipes.length) {
-    list.innerHTML = `<div class="empty muted">Noch keine Rezepte.<br>Fotografiere eine Kochbuchseite oder lege ein Rezept manuell an.</div>`;
+    list.innerHTML = `<div class="empty muted">Noch keine Rezepte.<br>Lade ein Foto oder einen Screenshot eines Rezepts hoch oder lege ein Rezept manuell an.</div>`;
     return;
   }
   if (!items.length) { list.innerHTML = `<div class="empty muted">Nichts gefunden.</div>`; return; }
