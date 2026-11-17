@@ -106,6 +106,9 @@
   <section id="viewList">
     <div class="fab-row">
       <button class="primary" id="photoBtn">🖼️ Foto / Screenshot</button>
+    </div>
+    <div class="fab-row">
+      <button id="pasteBtn">📋 Text einfügen</button>
       <button id="newBtn">✎ Manuell</button>
     </div>
     <input class="search" id="search" type="search" placeholder="Rezept oder Zutat suchen …">
@@ -148,12 +151,33 @@
     </div>
   </section>
 
+  <!-- TEXT EINFÜGEN -->
+  <section id="viewPaste" class="hidden">
+    <details class="card" style="padding:12px 14px;margin-bottom:12px" id="claudeHelp">
+      <summary style="font-weight:600">Mit der Claude-App auslesen (beste Qualität)</summary>
+      <ol style="padding-left:20px;margin:10px 0 6px">
+        <li>Tippe auf <b>Anleitung kopieren</b>.</li>
+        <li>Öffne die Claude-App, füge die Anleitung ein und hänge den Screenshot an (＋ → Fotos). Absenden.</li>
+        <li>Claudes Antwort kopieren (lange drücken → Kopieren), hierher zurück und unten einfügen.</li>
+      </ol>
+      <button id="copyPrompt">📄 Anleitung kopieren</button>
+    </details>
+    <p class="muted" style="margin:0 0 8px;font-size:14px">Oder: Screenshot in der Fotos-App öffnen, Finger auf den Text halten → <i>Alle auswählen</i> → <i>Kopieren</i> und hier einfügen.</p>
+    <textarea id="pasteText" rows="14" placeholder="Rezepttext hier einfügen …"></textarea>
+    <div class="actions">
+      <button class="primary" id="pasteGo">Rezept übernehmen</button>
+      <button id="pasteClip">Aus Zwischenablage</button>
+    </div>
+  </section>
+
   <!-- EINSTELLUNGEN -->
   <section id="viewSettings" class="hidden">
     <h4>Foto-Erkennung</h4>
-    <p class="muted" style="margin-top:0">Für das Auslesen von Fotos nutzt die App die Claude-API von Anthropic. Dafür brauchst du einen eigenen API-Schlüssel
-      (console.anthropic.com → API Keys). Der Schlüssel bleibt nur auf diesem Gerät gespeichert. Ein Foto auszulesen kostet etwa 1–3 Cent.</p>
-    <label for="sKey">API-Schlüssel</label>
+    <p class="muted" style="margin-top:0"><b>Ohne Schlüssel</b> liest die App Fotos kostenlos direkt auf dem Gerät aus (Texterkennung). Das klappt gut bei sauberen Screenshots,
+      die Aufteilung in Zutaten und Schritte musst du aber öfter nachbessern. Beim ersten Mal lädt die App dafür einmalig ca. 15 MB.</p>
+    <p class="muted"><b>Optional mit API-Schlüssel</b> (console.anthropic.com → API Keys) übernimmt Claude das Auslesen – deutlich genauer, auch bei Handschrift.
+      Kostet ca. 1–3 Cent pro Foto. Der Schlüssel bleibt nur auf diesem Gerät.</p>
+    <label for="sKey">API-Schlüssel (optional)</label>
     <input id="sKey" type="password" placeholder="sk-ant-…" autocomplete="off">
     <div class="actions" style="margin-top:10px"><button class="primary" id="sSave">Schlüssel speichern</button><button id="sDelKey" class="danger">Schlüssel löschen</button></div>
     <h4>Datensicherung</h4>
@@ -380,7 +404,7 @@ function friendlyError(e) {
 //  Navigation
 // ================================================================
 const $ = (id) => document.getElementById(id);
-const views = ["viewList", "viewDetail", "viewEdit", "viewSettings"];
+const views = ["viewList", "viewDetail", "viewEdit", "viewSettings", "viewPaste"];
 let current = { view: "viewList" };
 function show(view, title, opts = {}) {
   views.forEach((v) => $(v).classList.toggle("hidden", v !== view));
@@ -581,10 +605,7 @@ $("newBtn").onclick = () => openEdit(null);
 // ================================================================
 //  Foto → Rezept
 // ================================================================
-$("photoBtn").onclick = () => {
-  if (!localStorage.getItem(KEY_KEY)) { alert(friendlyError(new Error("NO_KEY"))); openSettings(); return; }
-  $("camInput").click();
-};
+$("photoBtn").onclick = () => $("camInput").click();
 $("camInput").multiple = true;
 $("camInput").onchange = async (e) => {
   const files = [...e.target.files]; e.target.value = "";
@@ -594,6 +615,13 @@ $("camInput").onchange = async (e) => {
   try {
     const imgs = await Promise.all(files.map(loadImage));
     const forApi = imgs.map((img) => resize(img, 1568, .85));
+    if (!localStorage.getItem(KEY_KEY)) {            // ohne Schlüssel: Texterkennung auf dem Gerät
+      const text = await ocrImages(imgs);
+      $("overlay").classList.add("hidden");
+      if (text.replace(/\s/g, "").length < 15) { alert("Auf dem Bild wurde kein Text erkannt."); return; }
+      openParsed(parseRecipeText(text), forApi, "Mit der Texterkennung auf dem Gerät gelesen. Bitte Zutaten und Schritte genau prüfen.");
+      return;
+    }
     const res = await recognizeRecipe(forApi);
     $("overlay").classList.add("hidden");
     if (!res.is_recipe) { alert("Auf dem Foto wurde kein Rezept erkannt."); return; }
@@ -614,6 +642,203 @@ $("camInput").onchange = async (e) => {
     console.error(err);
     alert(friendlyError(err));
   }
+};
+
+// Rezept aus Text-Erkennung/Einfügen ins Formular übernehmen
+function openParsed(r, images, hint) {
+  const missing = !(r.servings > 0);
+  const banner = `<div class="banner info">✓ ${esc(hint)}
+    ${missing ? "<br><b>Keine Portionsangabe gefunden.</b> Bitte selbst eintragen, sonst stimmt die Umrechnung nicht." : ""}
+    ${images && images.length ? `<details style="margin-top:6px"><summary>Aufnahme zum Vergleich anzeigen</summary>
+      ${images.map((d) => `<img class="photo-prev" src="${d}" alt="">`).join("")}
+      <div class="muted" style="font-size:12px;margin-top:4px">Die Aufnahme wird nicht gespeichert.</div></details>` : ""}</div>`;
+  openEdit({ ...r, servings: missing ? 4 : r.servings, photo: null }, banner);
+}
+
+// ================================================================
+//  Text → Rezept (ohne KI, auf dem Gerät)
+// ================================================================
+const UNIT_WORDS = "kg|g|gr|mg|ml|cl|dl|l|liter|el|tl|essl|teel|msp|prisen?|stück|stk|pck|päckchen|packung(?:en)?|pkg|dosen?|bund|zehen?|scheiben?|becher|tassen?|gläser|glas|handvoll|zweige?|blätter|blatt|stangen?|würfel|tüten?|beutel|spritzer|schuss|tropfen|kugeln?|knollen?|köpfe|kopf|cups?|tbsp|tsp|oz";
+const AMOUNT_RE = /^((?:\d+[.,]\d+|\d+\s+\d+\/\d+|\d+\/\d+|\d+\s*[½⅓⅔¼¾⅛]|\d+|[½⅓⅔¼¾⅛])(?:\s*(?:-|–|bis)\s*(?:\d+[.,]\d+|\d+\/\d+|\d+|[½⅓⅔¼¾⅛]))?)\s*/;
+const UNIT_RE = new RegExp("^(" + UNIT_WORDS + ")(?:\\/n|\\(n\\)|\\/en|\\(en\\))?(\\.|(?=[\\s,]|$))\\s*", "i");
+const UNIT_NORM = { el: "EL", essl: "EL", tl: "TL", teel: "TL", gr: "g", liter: "l", stk: "Stück", pkg: "Pck.", pck: "Pck.", msp: "Msp.", tbsp: "EL", tsp: "TL" };
+
+// Aufzählungszeichen entfernen – auch solche, die die Texterkennung als "e", "©", "»" o. Ä. liest
+const stripBullet = (l) => l.replace(/^(?:[-–•*·▪◦●□☐✓]|[eo°©®»«*]{1,2}[*.]?(?=\s))\s*/, "").trim();
+function parseIngredientLine(line) {
+  let s = stripBullet(line);
+  const a = s.match(AMOUNT_RE);
+  if (!a) return { group: "", amount: "", unit: "", name: s };
+  let rest = s.slice(a[0].length), unit = "";
+  const u = rest.match(UNIT_RE);
+  if (u) { unit = UNIT_NORM[u[1].toLowerCase()] || u[1]; rest = rest.slice(u[0].length); }
+  return { group: "", amount: a[1].replace(/\s+/g, " ").replace(/\s*(–|bis)\s*/, "-"), unit, name: rest.replace(/^[,:]\s*/, "").trim() };
+}
+
+function parseRecipeText(raw) {
+  const r = { title: "", servings: 0, servingsUnit: "", time: "", tags: [], ingredients: [], steps: [], notes: "" };
+  const lines = raw.replace(/\r/g, "").replace(/[“”„]/g, '"').split("\n").map((l) => l.replace(/\s+/g, " ").trim());
+  const H_ING = /^(zutaten(liste)?|du brauchst|ihr braucht|das brauchst du|einkaufsliste|ingredients)\b/i;
+  const H_STEP = /^(zubereitung|anleitung|so geht'?s|und so geht'?s|so wird'?s gemacht|arbeitsschritte|schritte|instructions|method)\b/i;
+  const H_NOTE = /^(notizen?|tipps?|hinweise?)\b/i;
+  const SERV = /(?:für|ergibt|reicht für|portionen\s*:)\s*(?:ca\.\s*)?(\d+(?:[.,]\d+)?)\s*(personen|portionen|stück|stk\.?|pers\.?|kuchen|gläser|muffins|brote?)?/i;
+  const SERV2 = /(\d+(?:[.,]\d+)?)\s*(personen|portionen|stück)\b/i;
+  const TIME = /(\d+\s*(?:-|–)?\s*\d*\s*(?:min(?:uten|\.)?|std\.?|stunden?|h)\b)/i;
+  const takeServ = (l) => {
+    const m = l.match(SERV) || l.match(SERV2);
+    if (m && !r.servings) { r.servings = Number(m[1].replace(",", ".")); r.servingsUnit = m[2] ? m[2].replace(/^pers.*/i, "Portionen").replace(/^personen$/i, "Portionen") : ""; return true; }
+    return false;
+  };
+  let section = "head", group = "", step = null, sawIngHeader = false, blank = false;
+  const pushStep = () => { if (step && step.trim()) r.steps.push(step.trim()); step = null; };
+
+  for (const line0 of lines) {
+    let line = line0;
+    if (!line) { blank = true; if (section === "steps") pushStep(); continue; }
+    // Felder im "Titel: …"-Format (Antwort aus der Claude-App)
+    let m;
+    if ((m = line.match(/^titel\s*:\s*(.+)/i))) { r.title = m[1]; continue; }
+    if ((m = line.match(/^(portionen|personen)\s*:\s*(.+)/i))) {
+      const n = m[2].match(/(\d+(?:[.,]\d+)?)\s*(.*)/);
+      if (n) { r.servings = Number(n[1].replace(",", ".")); r.servingsUnit = n[2].trim(); }
+      continue;
+    }
+    if ((m = line.match(/^(zeit|dauer|zubereitungszeit|gesamtzeit|arbeitszeit)\s*:\s*(.+)/i))) { if (!r.time) r.time = m[2]; continue; }
+    if ((m = line.match(/^(kategorien?|tags?)\s*:\s*(.*)/i))) { r.tags = m[2].split(/[,;]/).map((t) => t.trim()).filter(Boolean); continue; }
+
+    // Abschnitts-Überschriften
+    const short = line.length < 45;
+    if (short && H_ING.test(line)) { pushStep(); section = "ing"; sawIngHeader = true; group = ""; takeServ(line); blank = false; continue; }
+    if (short && H_STEP.test(line) && !/zeit/i.test(line)) { pushStep(); section = "steps"; blank = true; continue; }
+    if (short && H_NOTE.test(line)) {
+      pushStep(); section = "notes";
+      const rest = line.replace(H_NOTE, "").replace(/^\s*:\s*/, ""); if (rest) r.notes += rest + "\n"; continue;
+    }
+
+    if (section === "head") {
+      if (takeServ(line) && line.length < 40) continue;
+      if (!r.time && (m = line.match(TIME)) && line.length < 50) { r.time = m[1]; continue; }
+      if (!r.title && line.length > 2 && !AMOUNT_RE.test(line)) { r.title = line.replace(/:$/, ""); continue; }
+      if (sawIngHeader || AMOUNT_RE.test(line) || /^[-–•*·]/.test(line)) section = "ing"; // Zutaten ohne Überschrift
+      else { section = "steps"; }
+    }
+
+    if (section === "ing") {
+      const g = line.match(/^(?:#+\s*(.+)|(f[üu]r (?:den|die|das) .{2,30}?):?)$/i) || (line.endsWith(":") && line.length < 40 && !AMOUNT_RE.test(line) ? [null, line.slice(0, -1)] : null);
+      if (g) { group = (g[1] || g[2]).replace(/:$/, "").trim(); r.ingredients.push({ group, amount: "", unit: "", name: "" }); continue; }
+      // "für 4 Portionen" direkt unter der Zutaten-Überschrift
+      if (line.length < 40 && /^(für|ergibt|reicht für)\s/i.test(line) && SERV.test(line)) { takeServ(line); continue; }
+      const hasAmt = AMOUNT_RE.test(stripBullet(line));
+      // "1. Ofen vorheizen …" ist ein nummerierter Schritt, keine Zutat
+      if (/^\d{1,2}[.)]\s+\D/.test(line) && line.length > 25) { section = "steps"; blank = true; }
+      else
+      // Langer Satz ohne Menge → vermutlich beginnt die Zubereitung
+      if (!hasAmt && line.length > 70) { section = "steps"; blank = true; }
+      else {
+        const ing = parseIngredientLine(line);
+        // OCR-Zeilenumbruch: Fortsetzung ohne Menge, kleingeschrieben → an vorige Zutat hängen
+        const prev = r.ingredients[r.ingredients.length - 1];
+        if (!hasAmt && prev && prev.name && /^[a-zäöü(]/.test(ing.name) && !blank) prev.name += " " + ing.name;
+        else r.ingredients.push({ ...ing, group });
+        blank = false; continue;
+      }
+    }
+
+    if (section === "steps") {
+      if (line.length < 50 && /^(arbeitszeit|kochzeit|backzeit|ruhezeit|gesamtzeit|zubereitungszeit|koch-?\/?\s*backzeit)\b/i.test(line)) {
+        if (!r.time && (m = line.match(TIME))) r.time = m[1];
+        continue;
+      }
+      const num = line.match(/^(?:schritt\s*)?(\d{1,2})[.):]\s*(.*)/i);
+      if (num && !/^\d+\s*(g|ml|min|grad|°)/i.test(line)) { pushStep(); step = num[2]; }
+      else if (step == null || blank) { pushStep(); step = line; }
+      else step = step.endsWith("-") && /^[a-zäöü]/.test(line) ? step.slice(0, -1) + line : step + " " + line;
+      blank = false; continue;
+    }
+    if (section === "notes") { r.notes += line + "\n"; }
+  }
+  pushStep();
+  r.notes = r.notes.trim();
+  if (!r.title) r.title = "Neues Rezept";
+  return r;
+}
+window.__test.parseRecipeText = parseRecipeText;
+
+// ================================================================
+//  Texterkennung (OCR) auf dem Gerät – Tesseract.js, wird bei Bedarf geladen
+// ================================================================
+const TESSERACT_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js";
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement("script"); s.src = src; s.onload = res;
+    s.onerror = () => rej(new Error("Die Texterkennung konnte nicht geladen werden. Besteht eine Internetverbindung?"));
+    document.head.appendChild(s);
+  });
+}
+// Graustufen, dunkle Screenshots (Dark Mode) invertieren, kleine Bilder vergrößern
+function prepareForOcr(img) {
+  const scale = Math.min(2, Math.max(1, 1600 / img.naturalWidth), 3000 / Math.max(img.naturalWidth, img.naturalHeight) * 2);
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.naturalWidth * Math.min(scale, 2)); c.height = Math.round(img.naturalHeight * Math.min(scale, 2));
+  const ctx = c.getContext("2d"); ctx.drawImage(img, 0, 0, c.width, c.height);
+  const d = ctx.getImageData(0, 0, c.width, c.height), px = d.data;
+  let sum = 0;
+  for (let i = 0; i < px.length; i += 4) { const y = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]; px[i] = px[i + 1] = px[i + 2] = y; sum += y; }
+  if (sum / (px.length / 4) < 110) for (let i = 0; i < px.length; i += 4) px[i] = px[i + 1] = px[i + 2] = 255 - px[i];
+  ctx.putImageData(d, 0, 0);
+  return c;
+}
+async function ocrImages(imgs) {
+  if (!window.Tesseract) {
+    $("overlayText").textContent = "Texterkennung wird geladen … (nur beim ersten Mal etwas länger)";
+    await loadScript(TESSERACT_URL);
+  }
+  const worker = await Tesseract.createWorker("deu", 1, {
+    logger: (m) => {
+      if (m.status === "recognizing text") $("overlayText").textContent = `Text wird erkannt … ${Math.round(m.progress * 100)} %`;
+      else if (/load|initializ/i.test(m.status)) $("overlayText").textContent = "Texterkennung wird vorbereitet …";
+    }
+  });
+  try {
+    const texts = [];
+    for (const img of imgs) texts.push((await worker.recognize(prepareForOcr(img))).data.text);
+    return texts.join("\n\n");
+  } finally { await worker.terminate(); }
+}
+
+// ================================================================
+//  Text einfügen (z. B. Antwort aus der Claude-App oder Live Text)
+// ================================================================
+const CLAUDE_CHAT_PROMPT = `Lies das Rezept auf dem angehängten Bild aus und gib es mir genau in diesem Format zurück, ohne weiteren Text davor oder danach:
+
+Titel: <Name des Rezepts>
+Portionen: <Zahl> <Einheit, z. B. Portionen, Stück oder Kuchen>
+Zeit: <z. B. 45 Min., leer lassen wenn nicht angegeben>
+Kategorien: <1–3 Kategorien, z. B. Hauptgericht, vegetarisch>
+Zutaten:
+## <Zwischenüberschrift, nur falls vorhanden, z. B. Für den Teig>
+- <Menge> <Einheit> <Zutat>
+Zubereitung:
+1. <Schritt>
+2. <Schritt>
+Notizen: <Tipps, nur falls vorhanden>
+
+Regeln: Mengen als Zahl (1/2 statt ½, Bereiche als 2-3). Einheiten abgekürzt: g, kg, ml, l, EL, TL, Prise, Stück, Pck., Dose, Bund, Zehe. Zutaten ohne Menge (z. B. Salz nach Geschmack) ohne Zahl. Übernimm nur, was auf dem Bild steht, und erfinde nichts dazu. Fehlt die Portionsangabe, lass die Zeile Portionen leer.`;
+
+$("pasteBtn").onclick = () => { show("viewPaste", "Text einfügen"); $("pasteText").value = ""; $("copyPrompt").textContent = "📄 Anleitung kopieren"; };
+$("copyPrompt").onclick = async () => {
+  try { await navigator.clipboard.writeText(CLAUDE_CHAT_PROMPT); $("copyPrompt").textContent = "✓ Kopiert – jetzt in der Claude-App einfügen"; }
+  catch { $("pasteText").value = CLAUDE_CHAT_PROMPT; alert("Kopieren nicht möglich – die Anleitung steht jetzt im Textfeld, bitte von dort kopieren."); }
+};
+$("pasteClip").onclick = async () => {
+  try { $("pasteText").value = await navigator.clipboard.readText(); }
+  catch { alert("Zugriff auf die Zwischenablage nicht erlaubt. Bitte ins Textfeld tippen und „Einsetzen“ wählen."); }
+};
+$("pasteGo").onclick = () => {
+  const t = $("pasteText").value.trim();
+  if (!t) { alert("Bitte zuerst Rezepttext einfügen."); return; }
+  const fromClaude = /^titel\s*:/im.test(t);
+  openParsed(parseRecipeText(t), null, fromClaude ? "Rezept übernommen. Bitte kurz prüfen und dann speichern." : "Text übernommen. Bitte Zutaten und Schritte genau prüfen.");
 };
 
 // ================================================================
