@@ -697,13 +697,13 @@ function parseRecipeText(raw) {
     if (!line) { blank = true; if (section === "steps") pushStep(); continue; }
     // Felder im "Titel: …"-Format (Antwort aus der Claude-App)
     let m;
-    if ((m = line.match(/^titel\s*:\s*(.+)/i))) { r.title = m[1]; continue; }
-    if ((m = line.match(/^(portionen|personen)\s*:\s*(.+)/i))) {
+    if ((m = line.match(/^titel\s*:\s*(.*)/i))) { if (m[1]) r.title = m[1]; continue; }
+    if ((m = line.match(/^(portionen|personen)\s*:\s*(.*)/i))) {
       const n = m[2].match(/(\d+(?:[.,]\d+)?)\s*(.*)/);
       if (n) { r.servings = Number(n[1].replace(",", ".")); r.servingsUnit = n[2].trim(); }
       continue;
     }
-    if ((m = line.match(/^(zeit|dauer|zubereitungszeit|gesamtzeit|arbeitszeit)\s*:\s*(.+)/i))) { if (!r.time) r.time = m[2]; continue; }
+    if ((m = line.match(/^(zeit|dauer|zubereitungszeit|gesamtzeit|arbeitszeit)\s*:\s*(.*)/i))) { if (!r.time && m[2]) r.time = m[2]; continue; }
     if ((m = line.match(/^(kategorien?|tags?)\s*:\s*(.*)/i))) { r.tags = m[2].split(/[,;]/).map((t) => t.trim()).filter(Boolean); continue; }
 
     // Abschnitts-Überschriften
