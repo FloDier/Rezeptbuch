@@ -139,7 +139,7 @@
     <textarea id="fSteps" rows="8"></textarea>
     <label for="fNotes">Notizen</label>
     <textarea id="fNotes" rows="3" style="min-height:70px"></textarea>
-    <label>Foto</label>
+    <label>Foto vom fertigen Gericht (optional)</label>
     <div class="row"><button id="fPhotoBtn">Foto wählen</button><button id="fPhotoDel" class="danger hidden">Entfernen</button></div>
     <img id="fPhotoPrev" class="photo-prev hidden" alt="">
     <div class="actions">
@@ -594,16 +594,19 @@ $("camInput").onchange = async (e) => {
   try {
     const imgs = await Promise.all(files.map(loadImage));
     const forApi = imgs.map((img) => resize(img, 1568, .85));
-    const thumb = resize(imgs[0], 600, .7);
     const res = await recognizeRecipe(forApi);
     $("overlay").classList.add("hidden");
     if (!res.is_recipe) { alert("Auf dem Foto wurde kein Rezept erkannt."); return; }
     const missingServings = !(res.servings > 0);
+    // Das Aufnahmefoto dient nur zum Vergleichen beim Prüfen – es wird nicht gespeichert.
     const banner = `<div class="banner info">✓ Rezept erkannt. Bitte kurz prüfen und dann speichern.
-      ${missingServings ? "<br><b>Portionsangabe fehlte auf dem Foto.</b> Bitte selbst eintragen, sonst stimmt die Umrechnung nicht." : ""}</div>`;
+      ${missingServings ? "<br><b>Portionsangabe fehlte auf dem Foto.</b> Bitte selbst eintragen, sonst stimmt die Umrechnung nicht." : ""}
+      <details style="margin-top:6px"><summary>Aufnahme zum Vergleich anzeigen</summary>
+      ${forApi.map((d) => `<img class="photo-prev" src="${d}" alt="">`).join("")}
+      <div class="muted" style="font-size:12px;margin-top:4px">Die Aufnahme wird nicht gespeichert.</div></details></div>`;
     openEdit({
       title: res.title, servings: missingServings ? 4 : res.servings, servingsUnit: res.servings_unit,
-      time: res.time, tags: res.tags, steps: res.steps, notes: res.notes, photo: thumb,
+      time: res.time, tags: res.tags, steps: res.steps, notes: res.notes, photo: null,
       ingredients: res.ingredients.map((i) => ({ group: i.group, amount: i.amount, unit: i.unit, name: i.name }))
     }, banner);
   } catch (err) {
