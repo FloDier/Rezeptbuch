@@ -160,7 +160,8 @@
         <button class="primary" id="photoBtn">🖼️ Foto / Screenshot</button>
       </div>
       <div class="fab-row">
-        <button id="pasteBtn">📋 Text einfügen</button>
+        <button id="linkBtn">🔗 Link</button>
+        <button id="pasteBtn">📋 Text</button>
         <button id="newBtn">✎ Manuell</button>
       </div>
     </div>
@@ -225,6 +226,17 @@
       <button class="primary" id="pasteGo">Rezept übernehmen</button>
       <button id="pasteClip">Aus Zwischenablage</button>
     </div>
+  </section>
+
+  <!-- LINK -->
+  <section id="viewLink" class="hidden">
+    <p class="muted" style="margin-top:0;font-size:14px">Link einer Rezeptseite einfügen (in Safari: Teilen → <i>Kopieren</i>). Die App liest die Rezeptdaten der Seite aus.</p>
+    <input id="linkUrl" type="url" inputmode="url" placeholder="https://…" autocomplete="off" autocapitalize="off">
+    <div class="actions">
+      <button class="primary" id="linkGo">Rezept laden</button>
+      <button id="linkClip">Aus Zwischenablage</button>
+    </div>
+    <div id="linkMsg" style="margin-top:14px"></div>
   </section>
 
   <!-- EINKAUFSLISTE -->
@@ -493,7 +505,7 @@ function friendlyError(e) {
 //  Navigation
 // ================================================================
 const $ = (id) => document.getElementById(id);
-const views = ["viewList", "viewDetail", "viewEdit", "viewSettings", "viewPaste", "viewShop"];
+const views = ["viewList", "viewDetail", "viewEdit", "viewSettings", "viewPaste", "viewShop", "viewLink"];
 let current = { view: "viewList" };
 let folder = null;   // null = Startseite mit Ordnern, "__all", "__fav" oder Name einer Küche
 function show(view, title, opts = {}) {
@@ -664,6 +676,7 @@ function openDetail(id, servings) {
     <h4>Zutaten</h4>
     <ul class="ing">${ingHtml || '<li class="muted">Keine Zutaten erfasst.</li>'}</ul>
     ${r.steps.length ? `<h4>Zubereitung</h4><ol class="steps">${r.steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>` : ""}
+    ${r.source ? `<p style="font-size:14px"><a href="${esc(r.source)}" target="_blank" rel="noopener" style="color:var(--accent)">🔗 Original auf ${esc(hostOf(r.source))} ansehen</a></p>` : ""}
     ${r.notes ? `<h4>Notizen</h4><div class="note" style="white-space:pre-wrap">${esc(r.notes)}</div>` : ""}
     <div class="actions">
       <button id="editBtn">✎ Bearbeiten</button>
@@ -709,7 +722,7 @@ async function shareRecipe(r, target) {
 // ================================================================
 //  Bearbeiten / Neu
 // ================================================================
-let editPhoto = null;
+let editPhoto = null, editSource = "";
 function ingRow(i = {}) {
   const div = document.createElement("div");
   div.className = "ing-edit";
@@ -752,6 +765,7 @@ function openEdit(r, banner) {
   $("fSteps").value = (r?.steps || []).join("\n\n");
   $("fNotes").value = r?.notes || "";
   editPhoto = r?.photo || null;
+  editSource = r?.source || "";
   updatePhotoPrev();
   const rows = $("ingRows"); rows.innerHTML = "";
   const ing = toRows(r?.ingredients || []);
@@ -795,7 +809,7 @@ function saveEdit(id) {
     cuisine: $("fCuisine").value, cuisineAuto: !!$("fCuisine").dataset.auto,
     ingredients,
     steps: $("fSteps").value.split(/\n\s*\n|\n(?=\s*\d+[.)]\s)/).map((s) => s.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean),
-    notes: $("fNotes").value.trim(), photo: editPhoto, updated: Date.now()
+    notes: $("fNotes").value.trim(), photo: editPhoto, source: editSource, updated: Date.now()
   };
   if (id) { const idx = recipes.findIndex((x) => x.id === id); recipes[idx] = { ...recipes[idx], ...data }; }
   else { id = uid(); recipes.push({ id, created: Date.now(), ...data }); }
@@ -860,10 +874,12 @@ function openParsed(r, images, hint) {
 // ================================================================
 //  Text → Rezept (ohne KI, auf dem Gerät)
 // ================================================================
-const UNIT_WORDS = "kg|g|gr|mg|ml|cl|dl|l|liter|el|tl|essl|teel|msp|prisen?|stück|stk|pck|päckchen|packung(?:en)?|pkg|dosen?|bund|zehen?|scheiben?|becher|tassen?|gläser|glas|handvoll|zweige?|blätter|blatt|stangen?|würfel|tüten?|beutel|spritzer|schuss|tropfen|kugeln?|knollen?|köpfe|kopf|cups?|tbsp|tsp|oz";
+const UNIT_WORDS = "kg|g|gr|mg|ml|cl|dl|l|liter|el|tl|essl|teel|msp|prisen?|stück|stk|pck|päckchen|packung(?:en)?|pkg|dosen?|bund|zehen?|scheiben?|becher|tassen?|gläser|glas|handvoll|zweige?|blätter|blatt|stangen?|würfel|tüten?|beutel|spritzer|schuss|tropfen|kugeln?|knollen?|köpfe|kopf|cups?|tbsps?|tsps?|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|cloves?|pinch(?:es)?|cans?";
 const AMOUNT_RE = /^((?:\d+[.,]\d+|\d+\s+\d+\/\d+|\d+\/\d+|\d+\s*[½⅓⅔¼¾⅛]|\d+|[½⅓⅔¼¾⅛])(?:\s*(?:-|–|bis)\s*(?:\d+[.,]\d+|\d+\/\d+|\d+|[½⅓⅔¼¾⅛]))?)\s*/;
 const UNIT_RE = new RegExp("^(" + UNIT_WORDS + ")(?:\\/n|\\(n\\)|\\/en|\\(en\\))?(\\.|(?=[\\s,]|$))\\s*", "i");
-const UNIT_NORM = { el: "EL", essl: "EL", tl: "TL", teel: "TL", gr: "g", liter: "l", stk: "Stück", pkg: "Pck.", pck: "Pck.", msp: "Msp.", tbsp: "EL", tsp: "TL" };
+const UNIT_NORM = { el: "EL", essl: "EL", tl: "TL", teel: "TL", gr: "g", liter: "l", stk: "Stück", pkg: "Pck.", pck: "Pck.", msp: "Msp.",
+  tbsp: "EL", tbsps: "EL", tablespoon: "EL", tablespoons: "EL", tsp: "TL", tsps: "TL", teaspoon: "TL", teaspoons: "TL",
+  lbs: "lb", pound: "lb", pounds: "lb", ounce: "oz", ounces: "oz", clove: "Zehe", cloves: "Zehen", pinch: "Prise", pinches: "Prisen", cup: "Cup", cups: "Cups", can: "Dose", cans: "Dosen" };
 
 // Aufzählungszeichen entfernen – auch solche, die die Texterkennung als "e", "©", "»" o. Ä. liest
 const stripBullet = (l) => l.replace(/^(?:[-–•*·▪◦●□☐✓]|[eo°©®»«*]{1,2}[*.]?(?=\s))\s*/, "").trim();
@@ -1045,8 +1061,134 @@ $("pasteClip").onclick = async () => {
 $("pasteGo").onclick = () => {
   const t = $("pasteText").value.trim();
   if (!t) { alert("Bitte zuerst Rezepttext einfügen."); return; }
+  if (/^https?:\/\/\S+$/i.test(t)) { openLink(t); return; }   // nur ein Link eingefügt
   const fromClaude = /^titel\s*:/im.test(t);
   openParsed(parseRecipeText(t), null, fromClaude ? "Rezept übernommen. Bitte kurz prüfen und dann speichern." : "Text übernommen. Bitte Zutaten und Schritte genau prüfen.");
+};
+
+// ================================================================
+//  Rezept von einer Webseite (schema.org/Recipe-Daten der Seite)
+// ================================================================
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
+// Der Browser darf fremde Seiten nicht direkt lesen (CORS) – daher erst direkt, dann über öffentliche Vermittler.
+const FETCH_ROUTES = [
+  (u) => u,
+  (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+  (u) => "https://corsproxy.io/?url=" + encodeURIComponent(u),
+  (u) => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u)
+];
+async function fetchPage(url) {
+  let lastErr;
+  for (const route of FETCH_ROUTES) {
+    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res = await fetch(route(url), { signal: ctrl.signal });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const html = await res.text();
+      if (html.length > 500) return html;
+      throw new Error("leer");
+    } catch (e) { lastErr = e; } finally { clearTimeout(timer); }
+  }
+  throw new Error("Die Seite konnte nicht geladen werden (" + (lastErr?.message || "unbekannt") + ").");
+}
+const decodeHtml = (t) => { const d = document.createElement("textarea"); d.innerHTML = String(t ?? ""); return d.value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(); };
+function isoDuration(d) {
+  const m = String(d || "").match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/i);
+  if (!m) return 0;
+  return (+m[1] || 0) * 1440 + (+m[2] || 0) * 60 + (+m[3] || 0);
+}
+const fmtMinutes = (min) => !min ? "" : min < 60 ? `${min} Min.` : `${Math.floor(min / 60)} Std.${min % 60 ? " " + (min % 60) + " Min." : ""}`;
+
+function findRecipeNode(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const isRecipe = (n) => n && (n["@type"] === "Recipe" || (Array.isArray(n["@type"]) && n["@type"].includes("Recipe")));
+  const walk = (n) => {
+    if (!n || typeof n !== "object") return null;
+    if (Array.isArray(n)) { for (const x of n) { const r = walk(x); if (r) return r; } return null; }
+    if (isRecipe(n)) return n;
+    for (const k of ["@graph", "mainEntity", "itemListElement"]) { const r = walk(n[k]); if (r) return r; }
+    return null;
+  };
+  for (const sc of doc.querySelectorAll('script[type="application/ld+json"]')) {
+    try { const r = walk(JSON.parse(sc.textContent.replace(/[\u0000-\u001f]+/g, " "))); if (r) return { node: r, doc }; } catch {}
+  }
+  // Fallback: Microdata (itemprop)
+  const md = doc.querySelector('[itemtype*="schema.org/Recipe"]');
+  if (md) {
+    const all = (p) => [...md.querySelectorAll(`[itemprop="${p}"]`)].map((e) => e.getAttribute("content") || e.textContent);
+    return { node: { name: all("name")[0], recipeYield: all("recipeYield")[0], totalTime: all("totalTime")[0],
+      recipeIngredient: all("recipeIngredient").length ? all("recipeIngredient") : all("ingredients"), recipeInstructions: all("recipeInstructions") }, doc };
+  }
+  return { node: null, doc };
+}
+
+function recipeFromSchema(n, url) {
+  const arr = (x) => x == null ? [] : Array.isArray(x) ? x : [x];
+  const r = { title: decodeHtml(n.name) || "Neues Rezept", servings: 0, servingsUnit: "", time: "", tags: [], ingredients: [], steps: [], notes: "", source: url };
+  // Portionen: "4", "4 Portionen", ["4", "4 servings"]
+  for (const y of arr(n.recipeYield)) {
+    const m = String(y).match(/(\d+(?:[.,]\d+)?)\s*(.*)/);
+    if (m) { r.servings = Number(m[1].replace(",", ".")); const u = decodeHtml(m[2]);
+      r.servingsUnit = /^(servings?|portions?|people|personen|person|pers\.?|)$/i.test(u) ? "Portionen" : u.slice(0, 30); break; }
+  }
+  const total = isoDuration(n.totalTime) || isoDuration(n.prepTime) + isoDuration(n.cookTime);
+  r.time = fmtMinutes(total);
+  r.tags = [...new Set(arr(n.recipeCategory).flatMap((c) => String(c).split(",")).map(decodeHtml).filter(Boolean))].slice(0, 3);
+  for (const line of arr(n.recipeIngredient)) {
+    const t = decodeHtml(line).replace(/(\d)\s+([½⅓⅔¼¾⅛])/g, "$1$2");
+    if (t) r.ingredients.push({ ...parseIngredientLine(t), group: "" });
+  }
+  const addSteps = (x, section) => {
+    for (const it of arr(x)) {
+      if (typeof it === "string") { it.split(/\r?\n+|<br\s*\/?>|<\/p>|<\/li>/i).map(decodeHtml).forEach((s) => s && r.steps.push(s)); continue; }
+      const type = arr(it["@type"]);
+      if (type.includes("HowToSection")) { addSteps(it.itemListElement, decodeHtml(it.name)); section = ""; continue; }
+      const text = decodeHtml(it.text || it.name || "");
+      if (text) { r.steps.push(section ? `${section}: ${text}` : text); section = ""; }
+    }
+  };
+  addSteps(n.recipeInstructions, "");
+  const cuisineText = arr(n.recipeCuisine).join(" ");
+  r.cuisine = cuisineText ? guessCuisine({ title: cuisineText + " " + r.title, ingredients: r.ingredients }) : guessCuisine(r);
+  r.cuisineAuto = true;
+  r.notes = `Quelle: ${hostOf(url)}`;
+  return r;
+}
+
+function openLink(url) {
+  show("viewLink", "Rezept von Webseite");
+  $("linkUrl").value = url || ""; $("linkMsg").innerHTML = "";
+  if (url) $("linkGo").click();
+}
+$("linkBtn").onclick = () => openLink("");
+$("linkClip").onclick = async () => {
+  try { const t = (await navigator.clipboard.readText()).trim(); $("linkUrl").value = (t.match(/https?:\/\/\S+/) || [t])[0]; }
+  catch { alert("Zugriff auf die Zwischenablage nicht erlaubt. Bitte ins Feld tippen und „Einsetzen“ wählen."); }
+};
+$("linkGo").onclick = async () => {
+  let url = $("linkUrl").value.trim();
+  const m = url.match(/https?:\/\/\S+/); if (m) url = m[0];
+  if (!/^https?:\/\//i.test(url)) { alert("Bitte einen vollständigen Link einfügen (beginnt mit https://)."); return; }
+  $("linkMsg").innerHTML = "";
+  $("overlayText").textContent = `Rezept wird von ${hostOf(url)} geladen …`;
+  $("overlay").classList.remove("hidden");
+  try {
+    const html = await fetchPage(url);
+    const { node } = findRecipeNode(html);
+    $("overlay").classList.add("hidden");
+    if (!node || !(node.recipeIngredient || node.recipeInstructions)) throw new Error("NO_RECIPE");
+    const r = recipeFromSchema(node, url);
+    const english = r.ingredients.some((i) => /^(lb|oz|Cups?)$/.test(i.unit)) || /\b(the|and|with|until|minutes)\b/i.test(r.steps.join(" "));
+    openParsed(r, null, `Von ${hostOf(url)} übernommen. Bitte kurz prüfen und dann speichern.` +
+      (english ? " Hinweis: Das Rezept ist auf Englisch – für Übersetzung und Umrechnung den Weg über die Claude-App nutzen." : ""));
+  } catch (e) {
+    $("overlay").classList.add("hidden");
+    $("linkMsg").innerHTML = `<div class="banner err">${e.message === "NO_RECIPE"
+      ? "Auf dieser Seite wurden keine Rezeptdaten gefunden."
+      : esc(e.message) + " Manche Seiten blockieren das automatische Laden."}</div>
+      <div class="banner info"><b>So klappt es trotzdem:</b> Unter <i>📋 Text</i> die Anleitung kopieren, in der Claude-App zusammen mit diesem Link senden
+      und die Antwort hier einfügen.</div>`;
+  }
 };
 
 // ================================================================
