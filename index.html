@@ -350,7 +350,8 @@ const RECIPE_SCHEMA = {
 };
 
 const SYSTEM_PROMPT = `Du liest Rezepte aus Fotos aus (Kochbuchseiten, Zeitschriften, Screenshots, handgeschriebene Karten, Zutatenlisten).
-Übernimm den Inhalt so originalgetreu wie möglich auf Deutsch. Erfinde keine Zutaten, Mengen oder Schritte, die nicht auf dem Bild stehen.
+Übernimm den Inhalt so originalgetreu wie möglich auf Deutsch; Rezepte in anderen Sprachen übersetzt du.
+Rechne US-/britische Einheiten in metrische um (1 lb = 450 g, 1 oz = 28 g, 1 cup = 240 ml bzw. bei Mehl/Zucker in g, °F in °C, tbsp = EL, tsp = TL) und runde auf sinnvolle Küchenmengen. Erfinde keine Zutaten, Mengen oder Schritte, die nicht auf dem Bild stehen.
 Wenn nur eine Zutatenliste ohne Zubereitung zu sehen ist, lass steps leer.
 Trenne Menge, Einheit und Zutat sauber. Brüche wie ½ schreibst du als 1/2. Bereiche als '2-3'.
 Fehlt die Portionsangabe, setze servings auf 0. Ist ein Text unleserlich, vermerke das kurz in notes.
@@ -809,7 +810,7 @@ async function ocrImages(imgs) {
 // ================================================================
 //  Text einfügen (z. B. Antwort aus der Claude-App oder Live Text)
 // ================================================================
-const CLAUDE_CHAT_PROMPT = `Lies das Rezept auf dem angehängten Bild aus und gib es mir genau in diesem Format zurück, ohne weiteren Text davor oder danach:
+const CLAUDE_CHAT_PROMPT = `Lies das Rezept auf den angehängten Bildern (oder im Text oben) aus und gib es mir genau in diesem Format zurück, ohne weiteren Text davor oder danach:
 
 Titel: <Name des Rezepts>
 Portionen: <Zahl> <Einheit, z. B. Portionen, Stück oder Kuchen>
@@ -823,7 +824,7 @@ Zubereitung:
 2. <Schritt>
 Notizen: <Tipps, nur falls vorhanden>
 
-Regeln: Mengen als Zahl (1/2 statt ½, Bereiche als 2-3). Einheiten abgekürzt: g, kg, ml, l, EL, TL, Prise, Stück, Pck., Dose, Bund, Zehe. Zutaten ohne Menge (z. B. Salz nach Geschmack) ohne Zahl. Übernimm nur, was auf dem Bild steht, und erfinde nichts dazu. Fehlt die Portionsangabe, lass die Zeile Portionen leer.`;
+Regeln: Schreib alles auf Deutsch – ist das Rezept in einer anderen Sprache, übersetze es. Rechne US- und britische Einheiten um: lb und oz in g (1 lb = 450 g, 1 oz = 28 g), cups in ml (1 cup = 240 ml, bei Mehl und Zucker besser in g), fl oz in ml, °F in °C; tbsp wird EL, tsp wird TL. Runde auf sinnvolle Küchenmengen. Ist eine Zutat in der Anleitung erwähnt, aber nicht in der Zutatenliste, ergänze sie ohne Menge. Mengen als Zahl (1/2 statt ½, Bereiche als 2-3). Einheiten abgekürzt: g, kg, ml, l, EL, TL, Prise, Stück, Pck., Dose, Bund, Zehe. Zutaten ohne Menge (z. B. Salz nach Geschmack) ohne Zahl. Übernimm nur, was auf dem Bild steht, und erfinde nichts dazu. Fehlt die Portionsangabe, lass die Zeile Portionen leer.`;
 
 $("pasteBtn").onclick = () => { show("viewPaste", "Text einfügen"); $("pasteText").value = ""; $("copyPrompt").textContent = "📄 Anleitung kopieren"; };
 $("copyPrompt").onclick = async () => {
