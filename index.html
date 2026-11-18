@@ -46,7 +46,13 @@
   .grow { flex: 1; }
 
   /* Liste */
-  .search { margin-bottom: 14px; }
+  .search { margin-bottom: 10px; }
+  .filter { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .filter::-webkit-scrollbar { display: none; }
+  .filter button { flex: none; padding: 6px 12px; font-size: 14px; border-radius: 99px; }
+  .filter button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .filter .n { opacity: .65; font-size: 12px; }
+  .cuisine-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .list { display: grid; gap: 10px; }
   .item { display: flex; gap: 12px; padding: 10px; align-items: center; cursor: pointer; }
   .item img, .item .ph { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; flex: none;
@@ -112,6 +118,7 @@
       <button id="newBtn">✎ Manuell</button>
     </div>
     <input class="search" id="search" type="search" placeholder="Rezept oder Zutat suchen …">
+    <div class="filter" id="cuisineFilter"></div>
     <div class="list" id="list"></div>
   </section>
 
@@ -131,6 +138,9 @@
       <div class="grow"><label for="fTime">Zeit</label><input id="fTime" placeholder="z. B. 45 Min."></div>
       <div class="grow"><label for="fTags">Kategorien</label><input id="fTags" placeholder="Kuchen, vegetarisch"></div>
     </div>
+    <label for="fCuisine">Küche / Region</label>
+    <select id="fCuisine"></select>
+    <div class="cuisine-hint" id="fCuisineHint"></div>
     <label>Zutaten</label>
     <div class="ing-head"><span>Menge</span><span>Einheit</span><span>Zutat</span><span></span></div>
     <div id="ingRows"></div>
@@ -323,13 +333,14 @@ function resize(img, maxSide, quality) {
 const RECIPE_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["is_recipe", "title", "servings", "servings_unit", "time", "ingredients", "steps", "notes", "tags"],
+  required: ["is_recipe", "title", "servings", "servings_unit", "time", "cuisine", "ingredients", "steps", "notes", "tags"],
   properties: {
     is_recipe: { type: "boolean", description: "false, wenn auf dem Bild kein Rezept bzw. keine Zutatenliste zu erkennen ist" },
     title: { type: "string" },
     servings: { type: "number", description: "Anzahl Portionen/Stück des Originalrezepts; 0, wenn nicht angegeben" },
     servings_unit: { type: "string", description: "z. B. 'Portionen', 'Stück', 'Kuchen (26 cm)'; leer, wenn unklar" },
     time: { type: "string" },
+    cuisine: { type: "string", enum: null, description: "Küche/Region des Gerichts" },
     ingredients: {
       type: "array",
       items: {
@@ -355,7 +366,8 @@ Rechne US-/britische Einheiten in metrische um (1 lb = 450 g, 1 oz = 28 g, 1 cup
 Wenn nur eine Zutatenliste ohne Zubereitung zu sehen ist, lass steps leer.
 Trenne Menge, Einheit und Zutat sauber. Brüche wie ½ schreibst du als 1/2. Bereiche als '2-3'.
 Fehlt die Portionsangabe, setze servings auf 0. Ist ein Text unleserlich, vermerke das kurz in notes.
-Gib 1–3 passende Kategorien als tags an (z. B. Hauptgericht, Kuchen, vegetarisch).`;
+Gib 1–3 passende Kategorien als tags an (z. B. Hauptgericht, Kuchen, vegetarisch).
+Ordne das Gericht in cuisine genau einer Küche zu – nach Herkunft des Gerichts (Name, typische Zutaten, Zubereitung). Passt keine, nimm "Sonstige".`;
 
 async function getClient(apiKey) {
   const Anthropic = window.AnthropicSDK.default; // offizielles SDK (@anthropic-ai/sdk 1.10.0), unten in diese Datei eingebettet
@@ -423,13 +435,85 @@ $("backBtn").onclick = () => {
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 // ================================================================
+//  Küchen / Regionen – automatische Zuordnung
+// ================================================================
+const CUISINES = [
+  { name: "Italienisch", icon: "🇮🇹" }, { name: "Griechisch", icon: "🇬🇷" }, { name: "Spanisch", icon: "🇪🇸" },
+  { name: "Französisch", icon: "🇫🇷" }, { name: "Deutsch & Österreichisch", icon: "🇩🇪" }, { name: "Osteuropäisch", icon: "🥟" },
+  { name: "Türkisch & Orientalisch", icon: "🧆" }, { name: "Indisch", icon: "🇮🇳" }, { name: "Asiatisch", icon: "🥢" },
+  { name: "Mexikanisch", icon: "🇲🇽" }, { name: "Amerikanisch", icon: "🇺🇸" }, { name: "Sonstige", icon: "🍽️" }
+];
+RECIPE_SCHEMA.properties.cuisine.enum = CUISINES.map((c) => c.name);
+const cuisineIcon = (n) => (CUISINES.find((c) => c.name === n) || CUISINES[CUISINES.length - 1]).icon;
+
+// Stichwörter (klein geschrieben, Wortanfang). Treffer im Titel zählen dreifach.
+const CUISINE_KEYWORDS = {
+  "Italienisch": "pasta spaghetti tagliatelle penne fusilli rigatoni linguine lasagne lasagna ravioli tortellini gnocchi risotto pizza focaccia bruschetta carbonara bolognese pesto parmesan parmigiano pecorino mozzarella ricotta mascarpone tiramisu panna-cotta basilikum prosciutto pancetta guanciale antipasti minestrone saltimbocca ossobuco polenta aglio funghi italienisch italian",
+  "Griechisch": "feta gyros souvlaki tzatziki moussaka musaka pastitsio spanakopita bifteki stifado dolmades kalamata griechisch greek orzo kritharaki halloumi tirokafteri saganaki",
+  "Spanisch": "paella tapas chorizo gazpacho tortilla-española patatas-bravas serrano manchego churros sangria albondigas pimientos spanisch spanish aioli romesco",
+  "Französisch": "quiche ratatouille crêpe crepe coq-au-vin bouillabaisse croissant baguette béchamel bechamel gratin tarte flammkuchen crème-brûlée confit französisch french provence dijon cassoulet soufflé souffle",
+  "Deutsch & Österreichisch": "schnitzel spätzle spaetzle knödel kloß klöße germknödel sauerkraut bratwurst leberkäse kaiserschmarrn strudel apfelstrudel rouladen roulade sauerbraten eintopf maultaschen brezel pfannkuchen kartoffelsalat schweinebraten gulaschsuppe käsespätzle dampfnudel buchteln königsberger frikadellen bratkartoffeln zwiebelkuchen marmorkuchen streusel germteig topfen palatschinken tafelspitz",
+  "Osteuropäisch": "pierogi borschtsch borscht piroggen gulasch goulash paprikasch blini pelmeni soljanka stroganoff kohlrouladen golabki ungarisch polnisch russisch",
+  "Türkisch & Orientalisch": "döner kebab köfte kofta falafel hummus humus baba-ganoush tahini tahin couscous tajine shakshuka schakschuka bulgur lahmacun börek baklava sumach za'atar zaatar harissa ras-el-hanout pide türkisch orientalisch arabisch libanesisch marokkanisch persisch granatapfel",
+  "Indisch": "curry tikka-masala korma vindaloo biryani dal dhal naan chapati paneer garam-masala tandoori samosa chutney ghee kurkuma kreuzkümmel bockshornklee lassi raita indisch indian",
+  "Asiatisch": "sojasoße sojasauce soja soy teriyaki wok gochujang kimchi bibimbap bulgogi miso sushi ramen udon soba mirin sake reisessig sesamöl fischsauce fischsoße austernsauce hoisin sambal sriracha pak-choi pakchoi glasnudeln reisnudeln mie-nudeln ingwer zitronengras kokosmilch thai pad-thai tom-yum laksa pho dim-sum frühlingsrollen tofu edamame wasabi nori dashi asiatisch chinesisch japanisch koreanisch korean thailändisch vietnamesisch indonesisch nasi-goreng bami sate satay katsu",
+  "Mexikanisch": "taco tacos burrito enchilada quesadilla nachos guacamole salsa jalapeño jalapeno chipotle tortilla fajita chili-con-carne kidneybohnen koriander limette mexikanisch mexican",
+  "Amerikanisch": "burger cheeseburger hotdog pancakes brownie brownies cheesecake bbq barbecue pulled-pork coleslaw muffins cookies donut bagel ribs buffalo cajun amerikanisch american"
+};
+const CUISINE_RE = Object.fromEntries(Object.entries(CUISINE_KEYWORDS).map(([k, v]) => [k,
+  v.split(/\s+/).filter((w) => w.length >= 3)]));
+
+function guessCuisine(r) {
+  // Mehrwortbegriffe stehen in der Liste als einzelne Wörter; deshalb Titel und Zutaten als Text durchsuchen
+  const norm = (t) => " " + String(t || "").toLowerCase().replace(/[^a-zäöüß0-9'éèçñ-]+/g, " ") + " ";
+  const title = norm(r.title), body = norm((r.ingredients || []).map((i) => i.name + " " + (i.group || "")).join(" ") + " " + (r.tags || []).join(" "));
+  const steps = norm((r.steps || []).join(" "));
+  let best = "Sonstige", bestScore = 0;
+  for (const [cuisine, words] of Object.entries(CUISINE_RE)) {
+    let score = 0;
+    for (const w of words) {
+      if (w.length < 3) continue;
+      // Wortanfang – bei längeren Begriffen auch mitten in zusammengesetzten Wörtern (Rinder-gulasch, Hähnchen-curry)
+      // kurze Begriffe (≤ 4 Zeichen, z. B. "wok", "dal") nur als ganzes Wort
+      const hit = w.length <= 4 ? (t) => t.includes(" " + w + " ") : (t) => t.includes(" " + w) || (w.length >= 5 && t.includes(w));
+      if (hit(title)) score += 3; else if (hit(body)) score += 1; else if (hit(steps)) score += 0.5;
+    }
+    if (score > bestScore) { best = cuisine; bestScore = score; }
+  }
+  return bestScore >= 1 ? best : "Sonstige";
+}
+window.__test.guessCuisine = guessCuisine;
+
+// Rezepte ohne Küche (ältere oder importierte) automatisch zuordnen
+function migrateCuisines() {
+  let changed = false;
+  for (const r of recipes) if (!r.cuisine) { r.cuisine = guessCuisine(r); r.cuisineAuto = true; changed = true; }
+  if (changed) persist();
+}
+
+let cuisineFilter = "";
+function renderCuisineFilter() {
+  const counts = {};
+  recipes.forEach((r) => (counts[r.cuisine || "Sonstige"] = (counts[r.cuisine || "Sonstige"] || 0) + 1));
+  const used = CUISINES.filter((c) => counts[c.name]);
+  if (cuisineFilter && !counts[cuisineFilter]) cuisineFilter = "";
+  $("cuisineFilter").classList.toggle("hidden", used.length < 2 && !cuisineFilter);
+  $("cuisineFilter").innerHTML = `<button data-c="" class="${cuisineFilter ? "" : "on"}">Alle <span class="n">${recipes.length}</span></button>` +
+    used.map((c) => `<button data-c="${esc(c.name)}" class="${cuisineFilter === c.name ? "on" : ""}">${c.icon} ${esc(c.name)} <span class="n">${counts[c.name]}</span></button>`).join("");
+  $("cuisineFilter").querySelectorAll("button").forEach((b) => (b.onclick = () => { cuisineFilter = b.dataset.c; renderList(); }));
+}
+
+// ================================================================
 //  Liste
 // ================================================================
 function renderList() {
   show("viewList", "Rezeptbuch");
   const q = $("search").value.trim().toLowerCase();
+  renderCuisineFilter();
   const items = recipes
+    .filter((r) => !cuisineFilter || (r.cuisine || "Sonstige") === cuisineFilter)
     .filter((r) => !q || r.title.toLowerCase().includes(q) || (r.tags || []).some((t) => t.toLowerCase().includes(q))
+      || (r.cuisine || "").toLowerCase().includes(q)
       || r.ingredients.some((i) => (i.name || "").toLowerCase().includes(q)))
     .sort((a, b) => a.title.localeCompare(b.title, "de"));
   const list = $("list");
@@ -440,7 +524,7 @@ function renderList() {
   if (!items.length) { list.innerHTML = `<div class="empty muted">Nichts gefunden.</div>`; return; }
   list.innerHTML = items.map((r) => `
     <div class="card item" data-id="${r.id}">
-      ${r.photo ? `<img src="${r.photo}" alt="">` : `<div class="ph">🍲</div>`}
+      ${r.photo ? `<img src="${r.photo}" alt="">` : `<div class="ph">${cuisineIcon(r.cuisine)}</div>`}
       <div class="grow"><h3>${esc(r.title)}</h3>
         <div class="muted" style="font-size:14px">${r.servings} ${esc(r.servingsUnit || "Portionen")}${r.time ? " · " + esc(r.time) : ""}${(r.tags || []).length ? " · " + esc(r.tags.join(", ")) : ""}</div>
       </div>
@@ -468,7 +552,7 @@ function openDetail(id, servings) {
   $("viewDetail").innerHTML = `
     ${r.photo ? `<img class="hero" src="${r.photo}" alt="">` : ""}
     <h2>${esc(r.title)}</h2>
-    <div class="meta">${r.time ? `<span>⏱ ${esc(r.time)}</span>` : ""}${(r.tags || []).length ? `<span>🏷 ${esc(r.tags.join(", "))}</span>` : ""}
+    <div class="meta"><span>${cuisineIcon(r.cuisine)} ${esc(r.cuisine || "Sonstige")}</span>${r.time ? `<span>⏱ ${esc(r.time)}</span>` : ""}${(r.tags || []).length ? `<span>🏷 ${esc(r.tags.join(", "))}</span>` : ""}
       <span>Original: ${r.servings} ${esc(unit)}</span></div>
     <div class="card servings">
       <button id="minus" aria-label="Weniger">−</button>
@@ -550,6 +634,12 @@ function openEdit(r, banner) {
   $("fUnit").value = r?.servingsUnit || "";
   $("fTime").value = r?.time || "";
   $("fTags").value = (r?.tags || []).join(", ");
+  // Küche: gespeicherte Wahl, sonst automatische Erkennung
+  $("fCuisine").innerHTML = CUISINES.map((c) => `<option value="${esc(c.name)}">${c.icon} ${esc(c.name)}</option>`).join("");
+  const auto = !r?.cuisine || r.cuisineAuto;
+  $("fCuisine").value = r?.cuisine || guessCuisine(r || {});
+  $("fCuisine").dataset.auto = auto ? "1" : "";
+  $("fCuisineHint").textContent = auto ? "Automatisch erkannt – bei Bedarf ändern." : "";
   $("fSteps").value = (r?.steps || []).join("\n\n");
   $("fNotes").value = r?.notes || "";
   editPhoto = r?.photo || null;
@@ -560,6 +650,7 @@ function openEdit(r, banner) {
   $("saveBtn").onclick = () => saveEdit(r?.id);
   $("cancelBtn").onclick = () => (isNew ? renderList() : openDetail(r.id));
 }
+$("fCuisine").onchange = () => { $("fCuisine").dataset.auto = ""; $("fCuisineHint").textContent = ""; };
 $("addIng").onclick = () => $("ingRows").appendChild(ingRow());
 $("addGroup").onclick = () => $("ingRows").appendChild(ingRow({ isGroup: true, group: "" }));
 
@@ -592,6 +683,7 @@ function saveEdit(id) {
   const data = {
     title, servings, servingsUnit: $("fUnit").value.trim(), time: $("fTime").value.trim(),
     tags: $("fTags").value.split(",").map((t) => t.trim()).filter(Boolean),
+    cuisine: $("fCuisine").value, cuisineAuto: !!$("fCuisine").dataset.auto,
     ingredients,
     steps: $("fSteps").value.split(/\n\s*\n|\n(?=\s*\d+[.)]\s)/).map((s) => s.replace(/^\s*\d+[.)]\s*/, "").trim()).filter(Boolean),
     notes: $("fNotes").value.trim(), photo: editPhoto, updated: Date.now()
@@ -635,7 +727,7 @@ $("camInput").onchange = async (e) => {
       <div class="muted" style="font-size:12px;margin-top:4px">Die Aufnahme wird nicht gespeichert.</div></details></div>`;
     openEdit({
       title: res.title, servings: missingServings ? 4 : res.servings, servingsUnit: res.servings_unit,
-      time: res.time, tags: res.tags, steps: res.steps, notes: res.notes, photo: null,
+      time: res.time, tags: res.tags, steps: res.steps, notes: res.notes, photo: null, cuisine: res.cuisine, cuisineAuto: true,
       ingredients: res.ingredients.map((i) => ({ group: i.group, amount: i.amount, unit: i.unit, name: i.name }))
     }, banner);
   } catch (err) {
@@ -705,6 +797,11 @@ function parseRecipeText(raw) {
       continue;
     }
     if ((m = line.match(/^(zeit|dauer|zubereitungszeit|gesamtzeit|arbeitszeit)\s*:\s*(.*)/i))) { if (!r.time && m[2]) r.time = m[2]; continue; }
+    if ((m = line.match(/^(küche|region)\s*:\s*(.*)/i))) {
+      const c = CUISINES.find((c) => m[2] && c.name.toLowerCase().startsWith(m[2].trim().toLowerCase().split(/[ &]/)[0]));
+      if (c) { r.cuisine = c.name; r.cuisineAuto = true; }
+      continue;
+    }
     if ((m = line.match(/^(kategorien?|tags?)\s*:\s*(.*)/i))) { r.tags = m[2].split(/[,;]/).map((t) => t.trim()).filter(Boolean); continue; }
 
     // Abschnitts-Überschriften
@@ -816,6 +913,7 @@ Titel: <Name des Rezepts>
 Portionen: <Zahl> <Einheit, z. B. Portionen, Stück oder Kuchen>
 Zeit: <z. B. 45 Min., leer lassen wenn nicht angegeben>
 Kategorien: <1–3 Kategorien, z. B. Hauptgericht, vegetarisch>
+Küche: <genau eine aus: ${CUISINES.map((c) => c.name).join(", ")}>
 Zutaten:
 ## <Zwischenüberschrift, nur falls vorhanden, z. B. Für den Teig>
 - <Menge> <Einheit> <Zutat>
@@ -875,7 +973,7 @@ $("importInput").onchange = async (e) => {
     if (!Array.isArray(incoming)) throw new Error();
     const ids = new Set(recipes.map((r) => r.id));
     const added = incoming.filter((r) => r && r.title && !ids.has(r.id));
-    recipes.push(...added); persist();
+    recipes.push(...added); persist(); migrateCuisines();
     alert(`${added.length} Rezepte importiert${incoming.length - added.length ? `, ${incoming.length - added.length} schon vorhanden` : ""}.`);
     openSettings();
   } catch { alert("Datei konnte nicht gelesen werden."); }
@@ -900,6 +998,7 @@ if (!localStorage.getItem(STORE_KEY)) {
   }];
   persist();
 }
+migrateCuisines();
 renderList();
 </script>
 <!-- Anthropic SDK (MIT), gebündelt -->
