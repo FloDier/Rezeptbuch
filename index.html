@@ -52,6 +52,50 @@
   .filter button { flex: none; padding: 6px 12px; font-size: 14px; border-radius: 99px; }
   .filter button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
   .filter .n { opacity: .65; font-size: 12px; }
+  /* Ordner */
+  .folders { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .folder { padding: 14px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; min-height: 92px; }
+  .folder .fi { font-size: 30px; line-height: 1; }
+  .folder .fn { font-weight: 600; font-size: 15px; line-height: 1.2; }
+  .folder .fc { font-size: 13px; color: var(--muted); }
+  .folder.special { background: var(--accent-soft); border-color: transparent; }
+  /* Bewertung / Favoriten */
+  .rate { display: flex; align-items: center; gap: 4px; margin: 4px 0 12px; }
+  .rate button { border: 0; background: none; padding: 2px 3px; font-size: 26px; line-height: 1; color: var(--border); }
+  .rate button.on { color: #e3a008; }
+  .rate .fav { margin-left: auto; font-size: 15px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 99px; color: var(--text); }
+  .rate .fav.on { background: #fde8e8; border-color: #f3b4b4; color: #b3261e; }
+  .badges { font-size: 13px; }
+  .badges .st { color: #e3a008; }
+  /* Kopfzeile Einkaufsliste */
+  .cart { position: relative; }
+  .cart .bdg { position: absolute; top: -5px; right: -5px; background: var(--accent); color: #fff; border-radius: 99px;
+    font-size: 11px; min-width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+  /* Einkaufsliste */
+  .shop li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 2px; border-bottom: 1px solid var(--border); cursor: pointer; list-style: none; }
+  .shop { padding: 0; margin: 0; }
+  .shop .box { width: 22px; height: 22px; border: 2px solid var(--muted); border-radius: 6px; flex: none; margin-top: 1px;
+    display: flex; align-items: center; justify-content: center; font-size: 14px; color: #fff; }
+  .shop li.done .box { background: var(--accent); border-color: var(--accent); }
+  .shop li.done .t { text-decoration: line-through; opacity: .5; }
+  .shop .amt { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .shop .src { font-size: 12px; color: var(--muted); }
+  /* Kochmodus */
+  .cook { position: fixed; inset: 0; z-index: 30; background: var(--bg); display: flex; flex-direction: column;
+    padding: calc(env(safe-area-inset-top) + 8px) 18px calc(env(safe-area-inset-bottom) + 14px); }
+  .cook-top { display: flex; align-items: center; gap: 10px; }
+  .cook-top .ct { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cook-prog { height: 5px; background: var(--accent-soft); border-radius: 99px; margin: 10px 0 4px; overflow: hidden; }
+  .cook-prog div { height: 100%; background: var(--accent); transition: width .2s; }
+  .cook-body { flex: 1; overflow-y: auto; padding: 14px 0; }
+  .cook-step { font-size: 26px; line-height: 1.4; }
+  .cook-num { color: var(--accent); font-weight: 700; font-size: 16px; margin-bottom: 8px; letter-spacing: .03em; }
+  .cook-ings { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .cook-ings span { background: var(--accent-soft); border-radius: 99px; padding: 5px 11px; font-size: 16px; }
+  .cook-list li { font-size: 20px; padding: 9px 2px; }
+  .cook-nav { display: flex; gap: 10px; }
+  .cook-nav button { flex: 1; justify-content: center; padding: 16px; font-size: 18px; }
+  .cook-wake { font-size: 12px; color: var(--muted); text-align: center; margin-top: 6px; }
   .cuisine-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .list { display: grid; gap: 10px; }
   .item { display: flex; gap: 12px; padding: 10px; align-items: center; cursor: pointer; }
@@ -104,21 +148,24 @@
 <header>
   <button id="backBtn" class="icon hidden" aria-label="Zurück">‹</button>
   <h1 id="title">Rezeptbuch</h1>
+  <button id="cartBtn" class="icon cart" aria-label="Einkaufsliste">🛒<span class="bdg hidden" id="cartBadge"></span></button>
   <button id="settingsBtn" class="icon" aria-label="Einstellungen">⚙︎</button>
 </header>
 
 <main>
   <!-- LISTE -->
   <section id="viewList">
-    <div class="fab-row">
-      <button class="primary" id="photoBtn">🖼️ Foto / Screenshot</button>
-    </div>
-    <div class="fab-row">
-      <button id="pasteBtn">📋 Text einfügen</button>
-      <button id="newBtn">✎ Manuell</button>
+    <div id="homeActions">
+      <div class="fab-row">
+        <button class="primary" id="photoBtn">🖼️ Foto / Screenshot</button>
+      </div>
+      <div class="fab-row">
+        <button id="pasteBtn">📋 Text einfügen</button>
+        <button id="newBtn">✎ Manuell</button>
+      </div>
     </div>
     <input class="search" id="search" type="search" placeholder="Rezept oder Zutat suchen …">
-    <div class="filter" id="cuisineFilter"></div>
+    <div class="folders" id="folders"></div>
     <div class="list" id="list"></div>
   </section>
 
@@ -180,6 +227,20 @@
     </div>
   </section>
 
+  <!-- EINKAUFSLISTE -->
+  <section id="viewShop" class="hidden">
+    <div class="row" style="margin-bottom:10px">
+      <input id="shopNew" placeholder="Etwas hinzufügen, z. B. 1 l Milch" enterkeyhint="done">
+      <button id="shopAdd" class="primary" style="flex:none">＋</button>
+    </div>
+    <ul class="shop" id="shopList"></ul>
+    <div class="actions">
+      <button id="shopShare">↗︎ Teilen</button>
+      <button id="shopClearDone">Erledigte entfernen</button>
+      <button id="shopClear" class="danger">Liste leeren</button>
+    </div>
+  </section>
+
   <!-- EINSTELLUNGEN -->
   <section id="viewSettings" class="hidden">
     <h4>Foto-Erkennung</h4>
@@ -203,6 +264,21 @@
 <input type="file" id="camInput" accept="image/*" class="hidden">
 <input type="file" id="photoInput" accept="image/*" class="hidden">
 <input type="file" id="importInput" accept="application/json,.json" class="hidden">
+
+<div id="cook" class="cook hidden">
+  <div class="cook-top">
+    <button id="cookClose" class="icon" aria-label="Kochmodus beenden">✕</button>
+    <div class="ct" id="cookTitle"></div>
+    <button id="cookIngBtn">Zutaten</button>
+  </div>
+  <div class="cook-prog"><div id="cookProg"></div></div>
+  <div class="cook-body" id="cookBody"></div>
+  <div class="cook-nav">
+    <button id="cookPrev">‹ Zurück</button>
+    <button id="cookNext" class="primary">Weiter ›</button>
+  </div>
+  <div class="cook-wake" id="cookWake"></div>
+</div>
 
 <div id="overlay" class="overlay hidden"><div class="card"><div class="spinner"></div><div id="overlayText">Rezept wird gelesen …</div></div></div>
 
@@ -417,18 +493,23 @@ function friendlyError(e) {
 //  Navigation
 // ================================================================
 const $ = (id) => document.getElementById(id);
-const views = ["viewList", "viewDetail", "viewEdit", "viewSettings", "viewPaste"];
+const views = ["viewList", "viewDetail", "viewEdit", "viewSettings", "viewPaste", "viewShop"];
 let current = { view: "viewList" };
+let folder = null;   // null = Startseite mit Ordnern, "__all", "__fav" oder Name einer Küche
 function show(view, title, opts = {}) {
   views.forEach((v) => $(v).classList.toggle("hidden", v !== view));
   $("title").textContent = title;
-  $("backBtn").classList.toggle("hidden", view === "viewList");
-  $("settingsBtn").classList.toggle("hidden", view !== "viewList");
+  const home = view === "viewList" && !folder;
+  $("backBtn").classList.toggle("hidden", home);
+  $("settingsBtn").classList.toggle("hidden", !home);
+  $("cartBtn").classList.toggle("hidden", !(home || view === "viewDetail"));
   current = { view, ...opts };
   window.scrollTo(0, 0);
 }
 $("backBtn").onclick = () => {
   if (current.view === "viewEdit" && current.id) openDetail(current.id);
+  else if (current.view === "viewList" && folder) { folder = null; $("search").value = ""; renderList(); }
+  else if (current.view === "viewShop" && current.from) openDetail(current.from);
   else renderList();
 };
 
@@ -491,42 +572,54 @@ function migrateCuisines() {
   if (changed) persist();
 }
 
-let cuisineFilter = "";
-function renderCuisineFilter() {
-  const counts = {};
-  recipes.forEach((r) => (counts[r.cuisine || "Sonstige"] = (counts[r.cuisine || "Sonstige"] || 0) + 1));
-  const used = CUISINES.filter((c) => counts[c.name]);
-  if (cuisineFilter && !counts[cuisineFilter]) cuisineFilter = "";
-  $("cuisineFilter").classList.toggle("hidden", used.length < 2 && !cuisineFilter);
-  $("cuisineFilter").innerHTML = `<button data-c="" class="${cuisineFilter ? "" : "on"}">Alle <span class="n">${recipes.length}</span></button>` +
-    used.map((c) => `<button data-c="${esc(c.name)}" class="${cuisineFilter === c.name ? "on" : ""}">${c.icon} ${esc(c.name)} <span class="n">${counts[c.name]}</span></button>`).join("");
-  $("cuisineFilter").querySelectorAll("button").forEach((b) => (b.onclick = () => { cuisineFilter = b.dataset.c; renderList(); }));
-}
-
 // ================================================================
 //  Liste
 // ================================================================
+const folderTitle = (f) => f === "__all" ? "Alle Rezepte" : f === "__fav" ? "Favoriten" : f;
+function renderFolders() {
+  const counts = {};
+  recipes.forEach((r) => (counts[r.cuisine || "Sonstige"] = (counts[r.cuisine || "Sonstige"] || 0) + 1));
+  const favs = recipes.filter((r) => r.fav).length;
+  const tile = (key, icon, name, n, cls = "") =>
+    `<div class="card folder ${cls}" data-f="${esc(key)}"><div class="fi">${icon}</div><div class="fn">${esc(name)}</div><div class="fc">${n} ${n === 1 ? "Rezept" : "Rezepte"}</div></div>`;
+  $("folders").innerHTML =
+    tile("__fav", "❤️", "Favoriten", favs, "special") + tile("__all", "📚", "Alle Rezepte", recipes.length, "special") +
+    CUISINES.filter((c) => counts[c.name]).map((c) => tile(c.name, c.icon, c.name, counts[c.name])).join("");
+  $("folders").querySelectorAll(".folder").forEach((el) => (el.onclick = () => { folder = el.dataset.f; $("search").value = ""; renderList(); }));
+}
+const stars = (n) => n ? `<span class="st">${"★".repeat(n)}</span>` : "";
+
 function renderList() {
-  show("viewList", "Rezeptbuch");
   const q = $("search").value.trim().toLowerCase();
-  renderCuisineFilter();
+  show("viewList", folder ? folderTitle(folder) : "Rezeptbuch");
+  updateCartBadge();
+  const showFolders = !folder && !q && recipes.length > 0;
+  $("homeActions").classList.toggle("hidden", !!folder);
+  $("folders").classList.toggle("hidden", !showFolders);
+  $("list").classList.toggle("hidden", showFolders);
+  $("search").placeholder = folder ? `In „${folderTitle(folder)}“ suchen …` : "Rezept oder Zutat suchen …";
+  if (showFolders) { renderFolders(); return; }
   const items = recipes
-    .filter((r) => !cuisineFilter || (r.cuisine || "Sonstige") === cuisineFilter)
+    .filter((r) => !folder || folder === "__all" || (folder === "__fav" ? r.fav : (r.cuisine || "Sonstige") === folder))
     .filter((r) => !q || r.title.toLowerCase().includes(q) || (r.tags || []).some((t) => t.toLowerCase().includes(q))
       || (r.cuisine || "").toLowerCase().includes(q)
       || r.ingredients.some((i) => (i.name || "").toLowerCase().includes(q)))
-    .sort((a, b) => a.title.localeCompare(b.title, "de"));
+    .sort((a, b) => (folder === "__fav" ? (b.rating || 0) - (a.rating || 0) : 0) || a.title.localeCompare(b.title, "de"));
   const list = $("list");
   if (!recipes.length) {
     list.innerHTML = `<div class="empty muted">Noch keine Rezepte.<br>Lade ein Foto oder einen Screenshot eines Rezepts hoch oder lege ein Rezept manuell an.</div>`;
     return;
   }
-  if (!items.length) { list.innerHTML = `<div class="empty muted">Nichts gefunden.</div>`; return; }
+  if (!items.length) {
+    list.innerHTML = `<div class="empty muted">${folder === "__fav" && !q ? "Noch keine Favoriten.<br>Tippe in einem Rezept auf ♡ Favorit." : "Nichts gefunden."}</div>`;
+    return;
+  }
   list.innerHTML = items.map((r) => `
     <div class="card item" data-id="${r.id}">
       ${r.photo ? `<img src="${r.photo}" alt="">` : `<div class="ph">${cuisineIcon(r.cuisine)}</div>`}
       <div class="grow"><h3>${esc(r.title)}</h3>
         <div class="muted" style="font-size:14px">${r.servings} ${esc(r.servingsUnit || "Portionen")}${r.time ? " · " + esc(r.time) : ""}${(r.tags || []).length ? " · " + esc(r.tags.join(", ")) : ""}</div>
+        ${r.fav || r.rating ? `<div class="badges">${r.fav ? "❤️ " : ""}${stars(r.rating)}</div>` : ""}
       </div>
     </div>`).join("");
   list.querySelectorAll(".item").forEach((el) => (el.onclick = () => openDetail(el.dataset.id)));
@@ -552,6 +645,8 @@ function openDetail(id, servings) {
   $("viewDetail").innerHTML = `
     ${r.photo ? `<img class="hero" src="${r.photo}" alt="">` : ""}
     <h2>${esc(r.title)}</h2>
+    <div class="rate">${[1, 2, 3, 4, 5].map((n) => `<button data-r="${n}" class="${n <= (r.rating || 0) ? "on" : ""}" aria-label="${n} Sterne">★</button>`).join("")}
+      <button class="fav ${r.fav ? "on" : ""}" id="favBtn">${r.fav ? "❤️ Favorit" : "♡ Favorit"}</button></div>
     <div class="meta"><span>${cuisineIcon(r.cuisine)} ${esc(r.cuisine || "Sonstige")}</span>${r.time ? `<span>⏱ ${esc(r.time)}</span>` : ""}${(r.tags || []).length ? `<span>🏷 ${esc(r.tags.join(", "))}</span>` : ""}
       <span>Original: ${r.servings} ${esc(unit)}</span></div>
     <div class="card servings">
@@ -561,6 +656,10 @@ function openDetail(id, servings) {
     </div>
     <div class="chips">${quick.map((q) => `<button data-q="${q}" class="${q === target ? "on" : ""}">${q}</button>`).join("")}
       ${target !== r.servings ? `<button data-q="${r.servings}">↺ Original</button>` : ""}</div>
+    <div class="fab-row" style="margin:6px 0 4px">
+      ${r.steps.length ? `<button class="primary" id="cookBtn">👨‍🍳 Kochmodus</button>` : ""}
+      <button id="toShopBtn">🛒 Auf Einkaufsliste</button>
+    </div>
     ${factor !== 1 ? `<div class="note">Mengen umgerechnet (×${fmtNum(Math.round(factor * 100) / 100)}). Backzeit und Formgröße passen sich nicht automatisch an, und Gewürze lieber vorsichtig dosieren und abschmecken.</div>` : ""}
     <h4>Zutaten</h4>
     <ul class="ing">${ingHtml || '<li class="muted">Keine Zutaten erfasst.</li>'}</ul>
@@ -577,6 +676,16 @@ function openDetail(id, servings) {
   $("viewDetail").querySelectorAll(".chips button").forEach((b) => (b.onclick = () => openDetail(id, Number(b.dataset.q))));
   $("viewDetail").querySelectorAll("ul.ing li[data-i]").forEach((li) => (li.onclick = () => li.classList.toggle("done")));
   $("editBtn").onclick = () => openEdit(r);
+  $("viewDetail").querySelectorAll(".rate button[data-r]").forEach((b) => (b.onclick = () => {
+    const n = Number(b.dataset.r); r.rating = r.rating === n ? 0 : n; persist(); openDetail(id, target);
+  }));
+  $("favBtn").onclick = () => { r.fav = !r.fav; persist(); openDetail(id, target); };
+  if ($("cookBtn")) $("cookBtn").onclick = () => startCooking(r, target);
+  $("toShopBtn").onclick = () => {
+    const n = addRecipeToShop(r, target);
+    updateCartBadge();
+    $("toShopBtn").textContent = `✓ ${n} Zutaten hinzugefügt`;
+  };
   $("delBtn").onclick = () => {
     if (!confirm(`„${r.title}" wirklich löschen?`)) return;
     recipes = recipes.filter((x) => x.id !== id); persist(); renderList();
@@ -939,6 +1048,162 @@ $("pasteGo").onclick = () => {
   const fromClaude = /^titel\s*:/im.test(t);
   openParsed(parseRecipeText(t), null, fromClaude ? "Rezept übernommen. Bitte kurz prüfen und dann speichern." : "Text übernommen. Bitte Zutaten und Schritte genau prüfen.");
 };
+
+// ================================================================
+//  Einkaufsliste
+// ================================================================
+const SHOP_KEY = "rezeptbuch.shop.v1";
+let shop = (() => { try { return JSON.parse(localStorage.getItem(SHOP_KEY)) || []; } catch { return []; } })();
+const saveShop = () => localStorage.setItem(SHOP_KEY, JSON.stringify(shop));
+const SKIP_SHOP = /^(wasser|nudelwasser|leitungswasser|kochwasser|eiswasser|warmes wasser|heißes wasser)$/i;
+
+// Gleiche Zutaten zusammenführen: Name vereinfachen, Einheit auf g bzw. ml umrechnen
+function shopKeyName(name) {
+  let n = String(name).toLowerCase().replace(/\(.*?\)/g, "").split(",")[0].replace(/\s+/g, " ").trim();
+  n = n.replace(/(\S{4,})(n)$/, (m, a) => /(e|el|er)$/.test(a) ? a : m);   // Zwiebeln → Zwiebel, Tomaten → Tomate
+  return n;
+}
+function baseUnit(unit) {
+  const u = (unit || "").trim().toLowerCase();
+  if (u in WEIGHT) return { u: "g", f: WEIGHT[u] };
+  if (u in VOLUME) return { u: "ml", f: VOLUME[u] };
+  return { u: (unit || "").trim(), f: 1 };
+}
+// "Zehe"/"Zehen", "Dose"/"Dosen" als dieselbe Einheit behandeln
+const unitKey = (u) => u.toLowerCase().replace(/\.$/, "").replace(/(?<=\S{3})(en|n)$/, "");
+function addToShop(name, amount, unit, from) {
+  if (!name || SKIP_SHOP.test(name.trim())) return false;
+  const p = parseAmount(amount), b = baseUnit(unit);
+  const key = shopKeyName(name) + "|" + (p ? unitKey(b.u) : "");
+  let it = shop.find((x) => x.key === key && !x.checked);
+  if (!it) { it = { id: uid(), key, name: name.split(",")[0].replace(/\s*\(.*?\)\s*/g, " ").trim(), unit: p ? b.u : "", min: 0, max: 0, qty: !!p, checked: false, from: [] }; shop.push(it); }
+  if (p) { it.min += p.min * b.f; it.max += (p.max ?? p.min) * b.f; it.qty = true; }
+  if (from && !it.from.includes(from)) it.from.push(from);
+  return true;
+}
+function addRecipeToShop(r, target) {
+  const f = target / r.servings; let n = 0;
+  for (const i of r.ingredients) {
+    if (!i.name) continue;
+    const p = parseAmount(i.amount);
+    const amt = p ? (p.max != null ? `${p.min * f}-${p.max * f}` : String(p.min * f)) : "";
+    if (addToShop(i.name, amt, i.unit, r.title)) n++;
+  }
+  saveShop(); return n;
+}
+function shopAmount(it) {
+  if (!it.qty) return "";
+  const a = formatScaled(it.min, it.unit);
+  if (Math.abs(it.max - it.min) < 1e-9) return `${a.amount} ${a.unit}`.trim();
+  const b = formatScaled(it.max, it.unit);
+  return a.unit === b.unit ? `${a.amount}–${b.amount} ${a.unit}`.trim() : `${a.amount} ${a.unit} – ${b.amount} ${b.unit}`;
+}
+function updateCartBadge() {
+  const n = shop.filter((x) => !x.checked).length;
+  $("cartBadge").textContent = n; $("cartBadge").classList.toggle("hidden", !n);
+}
+function renderShop() {
+  show("viewShop", "Einkaufsliste", { from: current.view === "viewDetail" ? current.id : (current.view === "viewShop" ? current.from : null) });
+  const sorted = [...shop].sort((a, b) => (a.checked - b.checked) || a.name.localeCompare(b.name, "de"));
+  $("shopList").innerHTML = sorted.length ? sorted.map((it) => `
+    <li data-id="${it.id}" class="${it.checked ? "done" : ""}"><span class="box">${it.checked ? "✓" : ""}</span>
+      <div class="t grow">${it.qty ? `<span class="amt">${esc(shopAmount(it))}</span> ` : ""}${esc(it.name)}
+        ${it.from.length ? `<div class="src">${esc(it.from.join(", "))}</div>` : ""}</div></li>`).join("")
+    : `<li class="muted" style="cursor:default">Die Einkaufsliste ist leer.<br>Im Rezept auf „🛒 Auf Einkaufsliste“ tippen.</li>`;
+  $("shopList").querySelectorAll("li[data-id]").forEach((li) => (li.onclick = () => {
+    const it = shop.find((x) => x.id === li.dataset.id); it.checked = !it.checked; saveShop(); renderShop();
+  }));
+  updateCartBadge();
+}
+$("cartBtn").onclick = renderShop;
+$("shopAdd").onclick = () => {
+  const t = $("shopNew").value.trim(); if (!t) return;
+  const ing = parseIngredientLine(t);
+  addToShop(ing.name || t, ing.amount, ing.unit, ""); saveShop(); $("shopNew").value = ""; renderShop();
+};
+$("shopNew").onkeydown = (e) => { if (e.key === "Enter") $("shopAdd").click(); };
+$("shopClearDone").onclick = () => { shop = shop.filter((x) => !x.checked); saveShop(); renderShop(); };
+$("shopClear").onclick = () => { if (shop.length && confirm("Ganze Einkaufsliste leeren?")) { shop = []; saveShop(); renderShop(); } };
+$("shopShare").onclick = async () => {
+  const text = "Einkaufsliste\n" + shop.filter((x) => !x.checked).sort((a, b) => a.name.localeCompare(b.name, "de"))
+    .map((it) => `- ${[shopAmount(it), it.name].filter(Boolean).join(" ")}`).join("\n");
+  if (navigator.share) { try { await navigator.share({ title: "Einkaufsliste", text }); } catch {} }
+  else { await navigator.clipboard.writeText(text); alert("Einkaufsliste in die Zwischenablage kopiert."); }
+};
+
+// ================================================================
+//  Kochmodus
+// ================================================================
+let cook = null, wakeLock = null;
+async function keepAwake() {
+  try { if ("wakeLock" in navigator) { wakeLock = await navigator.wakeLock.request("screen"); $("cookWake").textContent = "☀︎ Bildschirm bleibt an"; return; } } catch {}
+  $("cookWake").textContent = "Tipp: Automatische Sperre in den iPhone-Einstellungen ggf. verlängern.";
+}
+document.addEventListener("visibilitychange", () => { if (cook && document.visibilityState === "visible") keepAwake(); });
+
+// Zutaten, die im Schritt vorkommen (mit umgerechneter Menge)
+const COOK_STOP = /^(frisch|gehackt|klein|groß|gross|rot|weiß|weiss|dunkl|dunkel|hell|getrocknet|gemahlen|weich|kalt|warm|trocken|fein|grob|optional|etwas|nach|geschmack|bio|alternativ|zimmerwarm|geschält|gewürfelt|zum|zur|und|oder|für|den|die|das|der|mit|anbraten|braten|servieren|garnieren|bestreuen|einfetten|bearbeiten|bestäuben|kochen|verzieren)(e|en|er|es|em)?$/;
+function ingredientsInStep(r, text, factor) {
+  const t = text.toLowerCase(), out = [];
+  for (const i of r.ingredients) {
+    if (!i.name) continue;
+    const words = i.name.toLowerCase().replace(/\(.*?\)/g, "").split(",")[0].trim().split(/[\s-]+/).filter((w) => w.length >= 2 && !COOK_STOP.test(w));
+    const stem = (w) => w.replace(/(en|n|e|s)$/, "").slice(0, Math.max(4, w.length - 2));
+    const found = (w) => w.length < 4 ? new RegExp(`(^|[^a-zäöüß])${w}([^a-zäöüß]|$)`).test(t)   // Öl, Ei
+      : t.includes(stem(w)) || (w.length >= 9 && t.includes(w.slice(-8)));                      // Rinder-hackfleisch
+    if (words.some(found)) {
+      const s = scaleIngredient(i, factor);
+      const label = `${[s.amount, s.unit].filter(Boolean).join(" ")} ${i.name.split(",")[0]}`.trim();
+      if (!out.includes(label)) out.push(label);
+    }
+  }
+  return out;
+}
+function startCooking(r, target) {
+  cook = { r, target, factor: target / r.servings, i: -1, showIngs: false };
+  $("cook").classList.remove("hidden"); document.body.style.overflow = "hidden";
+  $("cookTitle").textContent = `${r.title} · ${fmtNum(target)} ${r.servingsUnit || "Portionen"}`;
+  keepAwake(); renderCook();
+}
+function stopCooking() {
+  cook = null; $("cook").classList.add("hidden"); document.body.style.overflow = "";
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+function ingredientListHtml(r, f) {
+  return `<ul class="ing cook-list">${r.ingredients.map((i) => i.group && !i.name ? `<li class="group">${esc(i.group)}</li>`
+    : (() => { const s = scaleIngredient(i, f); return `<li><span class="amt">${esc(s.amount)} ${esc(s.unit)}</span><span>${esc(i.name)}</span></li>`; })()).join("")}</ul>`;
+}
+function renderCook() {
+  const { r, factor, i } = cook, n = r.steps.length;
+  $("cookProg").style.width = `${((i + 1) / (n + 1)) * 100}%`;
+  $("cookPrev").disabled = i < 0;
+  $("cookNext").textContent = i >= n - 1 ? "Fertig ✓" : "Weiter ›";
+  $("cookIngBtn").textContent = cook.showIngs ? "Schritt" : "Zutaten";
+  $("cookIngBtn").classList.toggle("hidden", i < 0);
+  if (i < 0 || cook.showIngs) {
+    $("cookBody").innerHTML = `<div class="cook-num">${i < 0 ? "VORBEREITUNG" : "ALLE ZUTATEN"}</div>
+      ${i < 0 ? `<div class="cook-step" style="font-size:22px;margin-bottom:8px">Zutaten bereitlegen</div>` : ""}${ingredientListHtml(r, factor)}`;
+    $("cookBody").querySelectorAll("li:not(.group)").forEach((li) => (li.onclick = () => li.classList.toggle("done")));
+  } else {
+    const used = ingredientsInStep(r, r.steps[i], factor);
+    $("cookBody").innerHTML = `<div class="cook-num">SCHRITT ${i + 1} VON ${n}</div><div class="cook-step">${esc(r.steps[i])}</div>
+      ${used.length ? `<div class="cook-ings">${used.map((u) => `<span>${esc(u)}</span>`).join("")}</div>` : ""}`;
+  }
+  $("cookBody").scrollTop = 0;
+}
+$("cookNext").onclick = () => {
+  if (cook.i >= cook.r.steps.length - 1) { const id = cook.r.id, t = cook.target; stopCooking(); openDetail(id, t); return; }
+  cook.i++; cook.showIngs = false; renderCook();
+};
+$("cookPrev").onclick = () => { if (cook.i >= 0) { cook.i--; cook.showIngs = false; renderCook(); } };
+$("cookIngBtn").onclick = () => { cook.showIngs = !cook.showIngs; renderCook(); };
+$("cookClose").onclick = () => { const id = cook.r.id, t = cook.target; stopCooking(); openDetail(id, t); };
+// Wischen: links = weiter, rechts = zurück
+(() => { let x0 = null;
+  $("cookBody").addEventListener("touchstart", (e) => (x0 = e.touches[0].clientX), { passive: true });
+  $("cookBody").addEventListener("touchend", (e) => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null;
+    if (Math.abs(dx) > 60) (dx < 0 ? $("cookNext") : $("cookPrev")).click(); }, { passive: true });
+})();
 
 // ================================================================
 //  Einstellungen / Export
