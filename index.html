@@ -605,6 +605,11 @@ window.__test.guessCuisine = guessCuisine;
 // Rezepte ohne Küche (ältere oder importierte) automatisch zuordnen
 function migrateCuisines() {
   let changed = false;
+  for (const r of recipes) for (const i of r.ingredients || []) {
+    if (i.unit || !i.amount || !i.name) continue;
+    const u = i.name.match(UNIT_RE);
+    if (u) { i.unit = UNIT_NORM[u[1].toLowerCase()] || u[1]; i.name = i.name.slice(u[0].length).trim(); changed = true; }
+  }
   for (const r of recipes) if (!r.cuisine) { r.cuisine = guessCuisine(r); r.cuisineAuto = true; changed = true; }
   if (changed) persist();
 }
@@ -731,18 +736,30 @@ function openDetail(id, servings) {
     recipes = recipes.filter((x) => x.id !== id); persist(); renderList();
   };
   $("shareBtn").onclick = () => shareRecipe(r, target);
-  $("printBtn").onclick = () => printNow(r.title);
+  $("printBtn").onclick = () => printNow(r.title, recipeText(r, target));
 }
 
 // Drucken (iPhone: Druckdialog → AirPrint oder „Als PDF sichern“ über Teilen)
-function printNow(title) {
+// In der Home-Bildschirm-App blockiert iOS window.print() – dort über das Teilen-Menü drucken.
+const isStandalone = () => navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
+async function printViaShare(title, text) {
+  if (!navigator.share) { alert("Drucken ist hier nicht möglich. Öffne die App in Safari und drucke dort."); return; }
+  if (!confirm("Direktes Drucken ist in der Home-Bildschirm-App vom iPhone gesperrt.\n\nIm folgenden Teilen-Menü nach unten wischen und „Drucken“ wählen.")) return;
+  try { await navigator.share({ title, text }); } catch {}
+}
+function printNow(title, text) {
+  if (isStandalone()) { printViaShare(title, text); return; }
   const old = document.title; document.title = title;   // wird als Dateiname für PDF verwendet
-  try { window.print(); }
-  catch { alert("Drucken wird hier nicht unterstützt. Tipp: Über ↗︎ Teilen als Text weitergeben."); }
-  setTimeout(() => (document.title = old), 1000);
+  let opened = false; const mark = () => (opened = true);
+  window.addEventListener("beforeprint", mark, { once: true });
+  try { window.print(); } catch {}
+  setTimeout(() => {
+    document.title = old; window.removeEventListener("beforeprint", mark);
+    if (!opened) printViaShare(title, text);   // Druckdialog ging nicht auf → Ausweichweg
+  }, 1500);
 }
 
-async function shareRecipe(r, target) {
+function recipeText(r, target) {
   const f = target / r.servings;
   const lines = [r.title, `${fmtNum(target)} ${r.servingsUnit || "Portionen"}`, "", "Zutaten:"];
   r.ingredients.forEach((i) => {
@@ -750,7 +767,11 @@ async function shareRecipe(r, target) {
     else { const s = scaleIngredient(i, f); lines.push(`- ${[s.amount, s.unit, i.name].filter(Boolean).join(" ")}`); }
   });
   if (r.steps.length) { lines.push("", "Zubereitung:"); r.steps.forEach((s, n) => lines.push(`${n + 1}. ${s}`)); }
-  const text = lines.join("\n");
+  if (r.notes) lines.push("", "Notizen:", r.notes);
+  return lines.join("\n");
+}
+async function shareRecipe(r, target) {
+  const text = recipeText(r, target);
   if (navigator.share) { try { await navigator.share({ title: r.title, text }); } catch {} }
   else { await navigator.clipboard.writeText(text); alert("Rezept in die Zwischenablage kopiert."); }
 }
@@ -910,10 +931,10 @@ function openParsed(r, images, hint) {
 // ================================================================
 //  Text → Rezept (ohne KI, auf dem Gerät)
 // ================================================================
-const UNIT_WORDS = "kg|g|gr|mg|ml|cl|dl|l|liter|el|tl|essl|teel|msp|prisen?|stück|stk|pck|päckchen|packung(?:en)?|pkg|dosen?|bund|zehen?|scheiben?|becher|tassen?|gläser|glas|handvoll|zweige?|blätter|blatt|stangen?|würfel|tüten?|beutel|spritzer|schuss|tropfen|kugeln?|knollen?|köpfe|kopf|cups?|tbsps?|tsps?|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|cloves?|pinch(?:es)?|cans?";
+const UNIT_WORDS = "kilogramm|milligramm|gramm|milliliter|esslöffel|teelöffel|kaffeelöffel|kl|kg|g|gr|mg|ml|cl|dl|l|liter|el|tl|essl|teel|msp|prisen?|stück|stk|pck|päckchen|packung(?:en)?|pkg|dosen?|bund|zehen?|scheiben?|becher|tassen?|gläser|glas|handvoll|zweige?|blätter|blatt|stangen?|würfel|tüten?|beutel|spritzer|schuss|tropfen|kugeln?|knollen?|köpfe|kopf|cups?|tbsps?|tsps?|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|cloves?|pinch(?:es)?|cans?";
 const AMOUNT_RE = /^((?:\d+[.,]\d+|\d+\s+\d+\/\d+|\d+\/\d+|\d+\s*[½⅓⅔¼¾⅛]|\d+|[½⅓⅔¼¾⅛])(?:\s*(?:-|–|bis)\s*(?:\d+[.,]\d+|\d+\/\d+|\d+|[½⅓⅔¼¾⅛]))?)\s*/;
 const UNIT_RE = new RegExp("^(" + UNIT_WORDS + ")(?:\\/n|\\(n\\)|\\/en|\\(en\\))?(\\.|(?=[\\s,]|$))\\s*", "i");
-const UNIT_NORM = { el: "EL", essl: "EL", tl: "TL", teel: "TL", gr: "g", liter: "l", stk: "Stück", pkg: "Pck.", pck: "Pck.", msp: "Msp.",
+const UNIT_NORM = { gramm: "g", kilogramm: "kg", milligramm: "mg", milliliter: "ml", esslöffel: "EL", teelöffel: "TL", kaffeelöffel: "TL", kl: "TL", el: "EL", essl: "EL", tl: "TL", teel: "TL", gr: "g", liter: "l", stk: "Stück", pkg: "Pck.", pck: "Pck.", msp: "Msp.",
   tbsp: "EL", tbsps: "EL", tablespoon: "EL", tablespoons: "EL", tsp: "TL", tsps: "TL", teaspoon: "TL", teaspoons: "TL",
   lbs: "lb", pound: "lb", pounds: "lb", ounce: "oz", ounces: "oz", clove: "Zehe", cloves: "Zehen", pinch: "Prise", pinches: "Prisen", cup: "Cup", cups: "Cups", can: "Dose", cans: "Dosen" };
 
@@ -1302,10 +1323,11 @@ $("shopAdd").onclick = () => {
 $("shopNew").onkeydown = (e) => { if (e.key === "Enter") $("shopAdd").click(); };
 $("shopClearDone").onclick = () => { shop = shop.filter((x) => !x.checked); saveShop(); renderShop(); };
 $("shopClear").onclick = () => { if (shop.length && confirm("Ganze Einkaufsliste leeren?")) { shop = []; saveShop(); renderShop(); } };
-$("shopPrint").onclick = () => printNow("Einkaufsliste");
-$("shopShare").onclick = async () => {
-  const text = "Einkaufsliste\n" + shop.filter((x) => !x.checked).sort((a, b) => a.name.localeCompare(b.name, "de"))
+$("shopPrint").onclick = () => printNow("Einkaufsliste", shopText());
+const shopText = () => "Einkaufsliste\n" + shop.filter((x) => !x.checked).sort((a, b) => a.name.localeCompare(b.name, "de"))
     .map((it) => `- ${[shopAmount(it), it.name].filter(Boolean).join(" ")}`).join("\n");
+$("shopShare").onclick = async () => {
+  const text = shopText();
   if (navigator.share) { try { await navigator.share({ title: "Einkaufsliste", text }); } catch {} }
   else { await navigator.clipboard.writeText(text); alert("Einkaufsliste in die Zwischenablage kopiert."); }
 };
