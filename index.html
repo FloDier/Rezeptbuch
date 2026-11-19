@@ -472,9 +472,16 @@ function formatScaled(value, unit) {
   return { amount: fmtNum(roundSmart(value)), unit: u };
 }
 
+// Eier, Eigelb, Eiweiß: immer ganze Stück (mind. 1) – ein halbes Ei braucht keiner
+const EGG_RE = /^(ei|eier|eigelbe?|eidotter|eiweiße?|eiweiss|eiklar)(?![a-zäöüß])/i;
 function scaleIngredient(ing, factor) {
   const p = parseAmount(ing.amount);
   if (!p) return { amount: ing.amount || "", unit: ing.unit || "" };
+  if (EGG_RE.test((ing.name || "").trim()) && (!ing.unit || /^stück$/i.test(ing.unit))) {
+    const r = (v) => Math.max(1, Math.round(v * factor));
+    const a = r(p.min), b = p.max != null ? r(p.max) : a;
+    return { amount: a === b ? String(a) : `${a}–${b}`, unit: ing.unit || "" };
+  }
   const a = formatScaled(p.min * factor, ing.unit);
   if (p.max == null) return a;
   const b = formatScaled(p.max * factor, ing.unit);
