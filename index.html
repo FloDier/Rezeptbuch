@@ -1068,7 +1068,7 @@ function parseRecipeText(raw, fromOcr = false) {
     if ((m = line.match(/^titel\s*:\s*(.*)/i))) { if (m[1]) r.title = m[1]; continue; }
     if ((m = line.match(/^(portionen|personen)\s*:\s*(.*)/i))) {
       const n = m[2].match(/(\d+(?:[.,]\d+)?)\s*(.*)/);
-      if (n) { r.servings = Number(n[1].replace(",", ".")); r.servingsUnit = n[2].trim(); }
+      if (n) { r.servings = Number(n[1].replace(",", ".")); r.servingsUnit = n[2].split(/\s+(?:mit|je|à|zu|a)\s+/i)[0].trim().slice(0, 30); }
       continue;
     }
     if ((m = line.match(/^(zeit|dauer|zubereitungszeit|gesamtzeit|arbeitszeit)\s*:\s*(.*)/i))) { if (!r.time && m[2]) r.time = m[2]; continue; }
@@ -1083,9 +1083,10 @@ function parseRecipeText(raw, fromOcr = false) {
     // Abschnitts-Überschriften
     const short = line.length < 45;
     if (short && H_END.test(line)) { pushStep(); section = /^n[äa]hrwert/i.test(line) ? "nutri" : "skip"; continue; }
-    if (section === "nutri") { nutriText.push(line); if (nutriText.length > 12) section = "skip"; continue; }
     if (short && H_ING.test(line)) { pushStep(); section = "ing"; sawIngHeader = true; group = ""; takeServ(line); blank = false; continue; }
     if (short && H_STEP.test(line) && !/zeit/i.test(line)) { pushStep(); section = "steps"; blank = true; continue; }
+    if (section === "nutri") { nutriText.push(line); if (nutriText.length > 12) section = "skip"; continue; }
+    if (section === "skip") continue;
     if (short && H_NOTE.test(line)) {
       pushStep(); section = "notes";
       const rest = line.replace(H_NOTE, "").replace(/^\s*:\s*/, ""); if (rest) r.notes += rest + "\n"; continue;
@@ -1240,21 +1241,41 @@ const FETCH_ROUTES = [
   (u) => u,
   (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
   (u) => "https://corsproxy.io/?url=" + encodeURIComponent(u),
-  (u) => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u)
+  (u) => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u),
+  (u) => "https://thingproxy.freeboard.io/fetch/" + u
 ];
+// Alle Wege gleichzeitig probieren – der erste, der HTML mit Inhalt liefert, gewinnt
 async function fetchPage(url) {
-  let lastErr;
-  for (const route of FETCH_ROUTES) {
-    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 15000);
+  const ctrls = [];
+  const tryRoute = async (route) => {
+    const ctrl = new AbortController(); ctrls.push(ctrl);
+    const timer = setTimeout(() => ctrl.abort(), 20000);
     try {
       const res = await fetch(route(url), { signal: ctrl.signal });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const html = await res.text();
-      if (html.length > 500) return html;
-      throw new Error("leer");
-    } catch (e) { lastErr = e; } finally { clearTimeout(timer); }
+      if (html.length < 500) throw new Error("leer");
+      return html;
+    } finally { clearTimeout(timer); }
+  };
+  try {
+    const html = await Promise.any(FETCH_ROUTES.map(tryRoute));
+    ctrls.forEach((c) => c.abort());
+    return html;
+  } catch {
+    throw new Error("LOAD_FAILED");
   }
-  throw new Error("Die Seite konnte nicht geladen werden (" + (lastErr?.message || "unbekannt") + ").");
+}
+// Notlösung: Lesedienst, der die Seite als reinen Text liefert (für Seiten, die Vermittler blockieren)
+async function fetchReadableText(url) {
+  const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 25000);
+  try {
+    const res = await fetch("https://r.jina.ai/" + url, { signal: ctrl.signal });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const t = await res.text();
+    if (t.length < 300) throw new Error("leer");
+    return t;
+  } finally { clearTimeout(timer); }
 }
 const decodeHtml = (t) => { const d = document.createElement("textarea"); d.innerHTML = String(t ?? ""); return d.value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim(); };
 function isoDuration(d) {
@@ -1341,10 +1362,22 @@ $("linkGo").onclick = async () => {
   $("overlayText").textContent = `Rezept wird von ${hostOf(url)} geladen …`;
   $("overlay").classList.remove("hidden");
   try {
-    const html = await fetchPage(url);
-    const { node } = findRecipeNode(html);
+    let node = null;
+    try { node = findRecipeNode(await fetchPage(url)).node; } catch {}
+    if (!node || !(node.recipeIngredient || node.recipeInstructions)) {
+      // Zweiter Versuch: Seite als Text holen und wie eingefügten Text auswerten
+      $("overlayText").textContent = "Zweiter Versuch über Lesedienst …";
+      let text = "";
+      try { text = await fetchReadableText(url); } catch {}
+      $("overlay").classList.add("hidden");
+      const r = text ? parseRecipeText(text.replace(/^(Title|URL Source|Published Time|Markdown Content):.*$/gim, "").replace(/^[ \t]*\|?[ \t:|-]+\|[ \t:|-]*$/gm, "").replace(/[ \t]*\|[ \t]*/g, " ").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^#+\s*/gm, "").replace(/^\s*[*-]\s+/gm, "- "), false) : null;
+      if (!r || r.ingredients.filter((i) => i.name).length < 2) throw new Error(text ? "NO_RECIPE" : "LOAD_FAILED");
+      r.source = url; r.notes = (r.notes ? r.notes + "\n" : "") + `Quelle: ${hostOf(url)}`;
+      r.cuisine = guessCuisine(r); r.cuisineAuto = true;
+      openParsed(r, null, `Von ${hostOf(url)} als Text übernommen. Bitte Zutaten und Schritte genau prüfen – Werbetext kann dazwischengeraten sein.`);
+      return;
+    }
     $("overlay").classList.add("hidden");
-    if (!node || !(node.recipeIngredient || node.recipeInstructions)) throw new Error("NO_RECIPE");
     const r = recipeFromSchema(node, url);
     const english = r.ingredients.some((i) => /^(lb|oz|Cups?)$/.test(i.unit)) || /\b(the|and|with|until|minutes)\b/i.test(r.steps.join(" "));
     openParsed(r, null, `Von ${hostOf(url)} übernommen. Bitte kurz prüfen und dann speichern.` +
@@ -1353,7 +1386,7 @@ $("linkGo").onclick = async () => {
     $("overlay").classList.add("hidden");
     $("linkMsg").innerHTML = `<div class="banner err">${e.message === "NO_RECIPE"
       ? "Auf dieser Seite wurden keine Rezeptdaten gefunden."
-      : esc(e.message) + " Manche Seiten blockieren das automatische Laden."}</div>
+      : e.message === "LOAD_FAILED" ? "Die Seite ließ sich nicht automatisch laden – sie blockiert das vermutlich." : esc(e.message)}</div>
       <div class="banner info"><b>So klappt es trotzdem:</b> Unter <i>📋 Text</i> die Anleitung kopieren, in der Claude-App zusammen mit diesem Link senden
       und die Antwort hier einfügen.</div>`;
   }
