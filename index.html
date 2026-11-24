@@ -980,7 +980,7 @@ $("camInput").onchange = async (e) => {
       const text = await ocrImages(imgs);
       $("overlay").classList.add("hidden");
       if (text.replace(/\s/g, "").length < 15) { alert("Auf dem Bild wurde kein Text erkannt."); return; }
-      openParsed(parseRecipeText(text), forApi, "Mit der Texterkennung auf dem Gerät gelesen. Bitte Zutaten und Schritte genau prüfen.");
+      openParsed(parseRecipeText(text, true), forApi, "Mit der Texterkennung auf dem Gerät gelesen. Bitte Zutaten und Schritte genau prüfen.");
       return;
     }
     const res = await recognizeRecipe(forApi);
@@ -1039,7 +1039,7 @@ function parseIngredientLine(line) {
   return { group: "", amount: a[1].replace(/\s+/g, " ").replace(/\s*(–|bis)\s*/, "-"), unit, name: rest.replace(/^[,:]\s*/, "").trim() };
 }
 
-function parseRecipeText(raw) {
+function parseRecipeText(raw, fromOcr = false) {
   const r = { title: "", servings: 0, servingsUnit: "", time: "", tags: [], ingredients: [], steps: [], notes: "" };
   const lines = raw.replace(/\r/g, "").replace(/[“”„]/g, '"').split("\n").map((l) => l.replace(/\s+/g, " ").trim());
   const H_ING = /^(zutaten(liste)?|du brauchst|ihr braucht|das brauchst du|einkaufsliste|ingredients)\b/i;
@@ -1053,6 +1053,10 @@ function parseRecipeText(raw) {
     if (m && !r.servings) { r.servings = Number(m[1].replace(",", ".")); r.servingsUnit = m[2] ? m[2].replace(/^pers.*/i, "Portionen").replace(/^personen$/i, "Portionen") : ""; return true; }
     return false;
   };
+  // Website-Screenshots: Steht irgendwo "Zutaten", gilt Text davor nur als Kopf (Titel, Portionen, Zeit) – kein Werbe-/Einleitungstext als Zutat
+  const hasIngHeader = lines.some((l) => l.length < 45 && H_ING.test(l));
+  const H_END = /^(nährwerte|naehrwerte|nährwertangaben|empfehlungen|ähnliche|das könnte|weitere rezepte|kommentare|bewertungen|teilen|aufbewahrung|werbung|anzeige|newsletter|mehr rezepte|passend dazu)\b/i;
+  const nutriText = [];
   let section = "head", group = "", step = null, sawIngHeader = false, blank = false;
   const pushStep = () => { if (step && step.trim()) r.steps.push(step.trim()); step = null; };
 
@@ -1078,6 +1082,8 @@ function parseRecipeText(raw) {
 
     // Abschnitts-Überschriften
     const short = line.length < 45;
+    if (short && H_END.test(line)) { pushStep(); section = /^n[äa]hrwert/i.test(line) ? "nutri" : "skip"; continue; }
+    if (section === "nutri") { nutriText.push(line); if (nutriText.length > 12) section = "skip"; continue; }
     if (short && H_ING.test(line)) { pushStep(); section = "ing"; sawIngHeader = true; group = ""; takeServ(line); blank = false; continue; }
     if (short && H_STEP.test(line) && !/zeit/i.test(line)) { pushStep(); section = "steps"; blank = true; continue; }
     if (short && H_NOTE.test(line)) {
@@ -1089,6 +1095,7 @@ function parseRecipeText(raw) {
       if (takeServ(line) && line.length < 40) continue;
       if (!r.time && (m = line.match(TIME)) && line.length < 50) { r.time = m[1]; continue; }
       if (!r.title && line.length > 2 && !AMOUNT_RE.test(line)) { r.title = line.replace(/:$/, ""); continue; }
+      if (hasIngHeader && !sawIngHeader) continue;                                     // Einleitung/Werbung vor "Zutaten" überspringen
       if (sawIngHeader || AMOUNT_RE.test(line) || /^[-–•*·]/.test(line)) section = "ing"; // Zutaten ohne Überschrift
       else { section = "steps"; }
     }
@@ -1126,8 +1133,18 @@ function parseRecipeText(raw) {
       blank = false; continue;
     }
     if (section === "notes") { r.notes += line + "\n"; }
+    // "skip": Werbung, Empfehlungen usw. – ignorieren, bis die nächste Überschrift kommt
   }
   pushStep();
+  if (nutriText.length && !r.nutrition) {
+    const t = nutriText.join(" ").replace(/energie\s*/i, "");
+    const n = parseNutrition(t.replace(/fett\s+([\d.,]+)\s*g/i, "$1 g Fett").replace(/kohlenhydrate\s+([\d.,]+)\s*g/i, "$1 g Kohlenhydrate").replace(/eiwei(ß|ss)\s+([\d.,]+)\s*g/i, "$2 g Eiweiß"));
+    if (n) r.nutrition = { ...n, estimated: false };
+  }
+  // Texterkennung liest "100g" oft als "1009": Menge ohne Einheit, mind. 2-stellig, endet auf 9 → g
+  if (fromOcr) for (const i of r.ingredients) {
+    if (!i.unit && /^\d{2,4}9$/.test(i.amount) && i.name && !EGG_RE.test(i.name)) { i.amount = i.amount.slice(0, -1); i.unit = "g"; }
+  }
   r.notes = r.notes.trim();
   if (!r.title) r.title = "Neues Rezept";
   return r;
