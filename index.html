@@ -367,7 +367,7 @@
       <button id="importBtn">⬆︎ Importieren</button>
     </div>
     <p class="muted" id="storageInfo" style="font-size:13px"></p>
-    <p class="muted" style="font-size:13px">App-Version: 24.11.2026 · Kurzbefehl</p>
+    <p class="muted" style="font-size:13px">App-Version: 24.11.2026 · Kurzbefehl 2</p>
   </section>
 </main>
 
@@ -1234,8 +1234,15 @@ $("copyPrompt").onclick = async () => {
   catch { $("pasteText").value = CLAUDE_CHAT_PROMPT; alert("Kopieren nicht möglich – die Anleitung steht jetzt im Textfeld, bitte von dort kopieren."); }
 };
 $("pasteClip").onclick = async () => {
-  try { $("pasteText").value = await navigator.clipboard.readText(); }
-  catch { alert("Zugriff auf die Zwischenablage nicht erlaubt. Bitte ins Textfeld tippen und „Einsetzen“ wählen."); }
+  let t = null;
+  try { t = await navigator.clipboard.readText(); }
+  catch { alert("Zugriff auf die Zwischenablage nicht möglich.\n\nBitte lange ins Textfeld drücken und „Einsetzen“ wählen."); $("pasteText").focus(); return; }
+  if (!t || !t.trim()) {
+    alert("Die Zwischenablage ist leer.\n\nFür eine Webseite: Seite in Safari öffnen → Teilen → „Ins Rezeptbuch“, dann hierher zurück.\n\nAlternativ lange ins Textfeld drücken und „Einsetzen“ wählen.");
+    return;
+  }
+  $("pasteText").value = t;
+  if (/^REZEPTBUCH-(JSON|TEXT)/.test(t.trim())) $("pasteGo").click();   // vom Kurzbefehl → gleich übernehmen
 };
 // Vom Kurzbefehl "Ins Rezeptbuch" (Safari → Teilen) kopierter Inhalt
 function importFromShortcut(t) {
