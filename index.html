@@ -304,6 +304,18 @@
       <button id="linkClip">Aus Zwischenablage</button>
     </div>
     <div id="linkMsg" style="margin-top:14px"></div>
+    <details class="card" style="padding:12px 14px;margin-top:14px" id="scHelp">
+      <summary style="font-weight:600">Zuverlässiger: Kurzbefehl „Ins Rezeptbuch“ (einmal einrichten)</summary>
+      <p style="font-size:14px">Viele Seiten sperren das Laden über den Link. Ein iPhone-Kurzbefehl liest das Rezept direkt aus der Seite, die du in Safari offen hast – das kann keine Seite blockieren.</p>
+      <ol style="padding-left:20px;font-size:14px;margin:6px 0">
+        <li>App <b>Kurzbefehle</b> öffnen → <b>＋</b> → Name: <i>Ins Rezeptbuch</i>.</li>
+        <li>Unten auf <b>ⓘ</b> (Details) → <b>Im Share-Sheet anzeigen</b> einschalten.</li>
+        <li>Aktion <b>„JavaScript auf Webseite ausführen“</b> hinzufügen. Den Beispieltext darin komplett löschen und den Code unten einfügen.</li>
+        <li>Aktion <b>„In Zwischenablage kopieren“</b> hinzufügen. Fertig.</li>
+      </ol>
+      <button id="copyScJs">📄 Code kopieren</button>
+      <p style="font-size:14px;margin-bottom:0"><b>Benutzen:</b> Rezeptseite in Safari öffnen → Teilen → <i>Ins Rezeptbuch</i>. Dann hier in der App <b>📋 Text → Aus Zwischenablage → Rezept übernehmen</b>.</p>
+    </details>
   </section>
 
   <!-- WOCHENPLAN -->
@@ -1224,9 +1236,35 @@ $("pasteClip").onclick = async () => {
   try { $("pasteText").value = await navigator.clipboard.readText(); }
   catch { alert("Zugriff auf die Zwischenablage nicht erlaubt. Bitte ins Textfeld tippen und „Einsetzen“ wählen."); }
 };
+// Vom Kurzbefehl "Ins Rezeptbuch" (Safari → Teilen) kopierter Inhalt
+function importFromShortcut(t) {
+  const m = t.match(/^REZEPTBUCH-(JSON|TEXT)\s+(\S+)\s*\n([\s\S]*)$/);
+  if (!m) return false;
+  const [, kind, url, body] = m;
+  if (kind === "JSON") {
+    const { node } = findRecipeNode(`<script type="application/ld+json">${body.replace(/<\/script/gi, "")}<\/script>`);
+    if (node && (node.recipeIngredient || node.recipeInstructions)) {
+      openParsed(recipeFromSchema(node, url), null, `Von ${hostOf(url)} übernommen. Bitte kurz prüfen und dann speichern.`);
+      return true;
+    }
+  }
+  const r = parseRecipeText(kind === "JSON" ? body.replace(/[{}"\[\]]/g, "\n") : body);
+  r.source = url; r.notes = (r.notes ? r.notes + "\n" : "") + `Quelle: ${hostOf(url)}`;
+  r.cuisine = guessCuisine(r); r.cuisineAuto = true;
+  openParsed(r, null, `Seitentext von ${hostOf(url)} übernommen (die Seite liefert keine Rezeptdaten). Bitte Zutaten und Schritte genau prüfen.`);
+  return true;
+}
+const SHORTCUT_JS = `var out = "";
+document.querySelectorAll('script[type="application/ld+json"]').forEach(function (s) {
+  if (!out && /Recipe/.test(s.textContent)) out = s.textContent;
+});
+completion(out ? "REZEPTBUCH-JSON " + location.href + "\\n" + out
+               : "REZEPTBUCH-TEXT " + location.href + "\\n" + document.body.innerText);`;
+
 $("pasteGo").onclick = () => {
   const t = $("pasteText").value.trim();
   if (!t) { alert("Bitte zuerst Rezepttext einfügen."); return; }
+  if (importFromShortcut(t)) return;
   if (/^https?:\/\/\S+$/i.test(t)) { openLink(t); return; }   // nur ein Link eingefügt
   const fromClaude = /^titel\s*:/im.test(t);
   openParsed(parseRecipeText(t), null, fromClaude ? "Rezept übernommen. Bitte kurz prüfen und dann speichern." : "Text übernommen. Bitte Zutaten und Schritte genau prüfen.");
@@ -1350,6 +1388,10 @@ function openLink(url) {
   if (url) $("linkGo").click();
 }
 $("linkBtn").onclick = () => openLink("");
+$("copyScJs").onclick = async () => {
+  try { await navigator.clipboard.writeText(SHORTCUT_JS); $("copyScJs").textContent = "✓ Code kopiert"; }
+  catch { $("linkUrl").value = SHORTCUT_JS; alert("Kopieren nicht möglich – der Code steht jetzt im Link-Feld."); }
+};
 $("linkClip").onclick = async () => {
   try { const t = (await navigator.clipboard.readText()).trim(); $("linkUrl").value = (t.match(/https?:\/\/\S+/) || [t])[0]; }
   catch { alert("Zugriff auf die Zwischenablage nicht erlaubt. Bitte ins Feld tippen und „Einsetzen“ wählen."); }
