@@ -386,7 +386,7 @@
       <button id="importBtn">⬆︎ Importieren</button>
     </div>
     <p class="muted" id="storageInfo" style="font-size:13px"></p>
-    <p class="muted" style="font-size:13px">App-Version: 26.11.2026 · Sync</p>
+    <p class="muted" style="font-size:13px">App-Version: 26.11.2026 · Sync 2</p>
   </section>
 </main>
 
@@ -1061,10 +1061,18 @@ const UNIT_NORM = { gramm: "g", kilogramm: "kg", milligramm: "mg", milliliter: "
 
 // Aufzählungszeichen entfernen – auch solche, die die Texterkennung als "e", "©", "»" o. Ä. liest
 const stripBullet = (l) => l.replace(/^(?:[-–•*·▪◦●□☐✓]|[eo°©®»«*]{1,2}[*.]?(?=\s))\s*/, "").trim();
+const TRAIL_RE = new RegExp("^(.*?\\S)\\s+((?:\\d+[.,]\\d+|\\d+\\s*[½⅓⅔¼¾⅛]|\\d+\\/\\d+|\\d+|[½⅓⅔¼¾⅛])(?:\\s*(?:-|–)\\s*(?:\\d+[.,]\\d+|\\d+))?)\\s*(" + UNIT_WORDS + ")\\.?$", "i");
 function parseIngredientLine(line) {
   let s = stripBullet(line);
   const a = s.match(AMOUNT_RE);
-  if (!a) return { group: "", amount: "", unit: "", name: s };
+  if (!a) {
+    // Cookidoo & Co.: Zutat zuerst, Menge am Ende
+    const t = s.match(TRAIL_RE);
+    if (t && !/\d/.test(t[1])) return { group: "", amount: t[2].replace(/\s*(–)\s*/, "-"), unit: UNIT_NORM[t[3].toLowerCase()] || t[3], name: t[1].replace(/[,:]\s*$/, "").trim() };
+    const n = s.match(/^([^\d]*[a-zäöüß)])\s+(\d{1,2}(?:[.,]5)?|[½¼¾])$/i);   // "Knoblauchzehen 3"
+    if (n) return { group: "", amount: n[2], unit: "", name: n[1].replace(/[,:]\s*$/, "").trim() };
+    return { group: "", amount: "", unit: "", name: s };
+  }
   let rest = s.slice(a[0].length), unit = "";
   const u = rest.match(UNIT_RE);
   if (u) { unit = UNIT_NORM[u[1].toLowerCase()] || u[1]; rest = rest.slice(u[0].length); }
@@ -1079,7 +1087,7 @@ function parseRecipeText(raw, fromOcr = false) {
   const H_NOTE = /^(notizen?|tipps?|hinweise?)\b/i;
   const SERV = /(?:für|ergibt|reicht für|portionen\s*:)\s*(?:ca\.\s*)?(\d+(?:[.,]\d+)?)\s*(personen|portionen|stück|stk\.?|pers\.?|kuchen|gläser|muffins|brote?)?/i;
   const SERV2 = /(\d+(?:[.,]\d+)?)\s*(personen|portionen|stück)\b/i;
-  const TIME = /(\d+\s*(?:-|–)?\s*\d*\s*(?:min(?:uten|\.)?|std\.?|stunden?|h)\b)/i;
+  const TIME = /(\d+\s*(?:-|–)?\s*\d*\s*(?:std\.?|stunden?|h)\b\.?(?:\s*\d+\s*min(?:uten|\.)?)?|\d+\s*(?:-|–)?\s*\d*\s*min(?:uten|\.)?)/i;
   const takeServ = (l) => {
     const m = l.match(SERV) || l.match(SERV2);
     if (m && !r.servings) { r.servings = Number(m[1].replace(",", ".")); r.servingsUnit = m[2] ? m[2].replace(/^pers.*/i, "Portionen").replace(/^personen$/i, "Portionen") : ""; return true; }
@@ -1087,7 +1095,7 @@ function parseRecipeText(raw, fromOcr = false) {
   };
   // Website-Screenshots: Steht irgendwo "Zutaten", gilt Text davor nur als Kopf (Titel, Portionen, Zeit) – kein Werbe-/Einleitungstext als Zutat
   const hasIngHeader = lines.some((l) => l.length < 45 && H_ING.test(l));
-  const H_END = /^(nährwerte|naehrwerte|nährwertangaben|empfehlungen|ähnliche|das könnte|weitere rezepte|kommentare|bewertungen|teilen|aufbewahrung|werbung|anzeige|newsletter|mehr rezepte|passend dazu)\b/i;
+  const H_END = /^(schwierigkeitsgrad|schwierigkeit|nährwerte|naehrwerte|nährwertangaben|empfehlungen|ähnliche|das könnte|weitere rezepte|kommentare|bewertungen|teilen|aufbewahrung|werbung|anzeige|newsletter|mehr rezepte|passend dazu)\b/i;
   const nutriText = [];
   let section = "head", group = "", step = null, sawIngHeader = false, blank = false;
   const pushStep = () => { if (step && step.trim()) r.steps.push(step.trim()); step = null; };
@@ -1146,6 +1154,9 @@ function parseRecipeText(raw, fromOcr = false) {
       if (!hasAmt && line.length > 70) { section = "steps"; blank = true; }
       else {
         const ing = parseIngredientLine(line);
+        const prevI = r.ingredients[r.ingredients.length - 1];
+        // Nur Menge in dieser Zeile ("70 g") und vorige Zutat ohne Menge → zusammenführen
+        if (hasAmt && !ing.name && prevI && prevI.name && !prevI.amount) { prevI.amount = ing.amount; prevI.unit = ing.unit; blank = false; continue; }
         // OCR-Zeilenumbruch: Fortsetzung ohne Menge, kleingeschrieben → an vorige Zutat hängen
         const prev = r.ingredients[r.ingredients.length - 1];
         if (!hasAmt && prev && prev.name && /^[a-zäöü(]/.test(ing.name) && !blank) prev.name += " " + ing.name;
@@ -1439,7 +1450,8 @@ $("linkGo").onclick = async () => {
       let text = "";
       try { text = await fetchReadableText(url); } catch {}
       $("overlay").classList.add("hidden");
-      const r = text ? parseRecipeText(text.replace(/^(Title|URL Source|Published Time|Markdown Content):.*$/gim, "").replace(/^[ \t]*\|?[ \t:|-]+\|[ \t:|-]*$/gm, "").replace(/[ \t]*\|[ \t]*/g, " ").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^#+\s*/gm, "").replace(/^\s*[*-]\s+/gm, "- "), false) : null;
+      const r = text ? parseRecipeText(text.replace(/^(Title|URL Source|Published Time|Markdown Content):.*$/gim, "").replace(/^[ \t]*\|?[ \t:|-]+\|[ \t:|-]*$/gm, "").replace(/[ \t]*\|[ \t]*/g, " ").replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^\s*(springe zum (haupt)?inhalt|zum inhalt springen|skip to (main )?content)\b.*$/gim, "").replace(/^#+\s*/gm, "").replace(/^\s*[*-]\s+/gm, "- ").replace(/^\s*[=-]{3,}\s*$/gm, "").replace(/^(.+)\n\s*(\d+(?:[.,]\d+)?\s*\S*)\s*$/gm, (m, a, b) => /^- /.test(a) && /^\d/.test(b) && b.length < 12 ? `${a} ${b}` : m)
+        .replace(/^(?!- )([^\d\n][^\n]{1,38})\n(?=- )/gm, (m, a) => /:$|^(zutaten|zubereitung)/i.test(a) ? m : `## ${a}\n`), false) : null;
       if (!r || r.ingredients.filter((i) => i.name).length < 2) throw new Error(text ? "NO_RECIPE" : "LOAD_FAILED");
       r.source = url; r.notes = (r.notes ? r.notes + "\n" : "") + `Quelle: ${hostOf(url)}`;
       r.cuisine = guessCuisine(r); r.cuisineAuto = true;
